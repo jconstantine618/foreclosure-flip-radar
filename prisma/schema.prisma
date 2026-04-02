@@ -1,0 +1,465 @@
+// ─────────────────────────────────────────────────────────────
+// Foreclosure Flip Radar – Prisma Schema
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+// ──────────────── Enums ────────────────
+
+enum Role {
+  ADMIN
+  ANALYST
+  BUYER
+}
+
+enum DistressStage {
+  PRE_FORECLOSURE
+  AUCTION
+  REO
+  TAX_LIEN
+  LIS_PENDENS
+  BANK_OWNED
+  OTHER
+}
+
+enum PropertyType {
+  SINGLE_FAMILY
+  TOWNHOUSE
+  CONDO
+  DUPLEX
+  MULTI_FAMILY
+  OTHER
+}
+
+enum PipelineStage {
+  NEW
+  REVIEWING
+  DRIVE_BY
+  UNDERWRITING
+  BID_READY
+  PASSED
+  WON
+  DISPOSITION
+}
+
+enum AlertType {
+  NEW_OPPORTUNITY
+  HOT_LEAD
+  AUCTION_APPROACHING
+  STATUS_CHANGED
+  DAILY_DIGEST
+}
+
+enum AlertChannel {
+  EMAIL
+  SMS
+  SLACK
+  WEBHOOK
+}
+
+enum NoticeType {
+  MASTER_IN_EQUITY
+  UPSET_BID
+  LIS_PENDENS
+  TAX_SALE
+  PUBLIC_NOTICE
+  OTHER
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ProviderName {
+  BATCHDATA
+  ATTOM
+  GREENVILLE_MIE
+  HORRY_MIE
+  HORRY_UPSET
+  SC_PUBLIC_NOTICES
+  MANUAL
+}
+
+// ──────────────── Models ────────────────
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      Role     @default(BUYER)
+  orgId     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization  Organization?   @relation(fields: [orgId], references: [id])
+  alertRules    AlertRule[]
+  watchlistItems WatchlistItem[]
+  savedSearches SavedSearch[]
+  notes         Note[]
+
+  @@index([orgId])
+  @@index([role])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+}
+
+model Property {
+  id                String       @id @default(cuid())
+  normalizedAddress String
+  streetAddress     String
+  city              String
+  state             String
+  county            String
+  zipCode           String
+  latitude          Float?
+  longitude         Float?
+  parcelNumber      String?
+  apn               String?
+  propertyType      PropertyType @default(SINGLE_FAMILY)
+  bedrooms          Int?
+  bathrooms         Float?
+  sqft              Int?
+  lotSizeSqft       Int?
+  yearBuilt         Int?
+  estimatedValue    Float?
+  assessedValue     Float?
+  lastSalePrice     Float?
+  lastSaleDate      DateTime?
+  ownerName         String?
+  ownerOccupied     Boolean      @default(false)
+  absenteeOwner     Boolean      @default(false)
+  mortgageBalance   Float?
+  mortgageDate      DateTime?
+  mortgageLender    String?
+  equityEstimate    Float?
+  taxDelinquent     Boolean      @default(false)
+  taxAmount         Float?
+  floodZone         Boolean      @default(false)
+  hoaAmount         Float?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  sourceRecords  PropertySourceRecord[]
+  opportunity    Opportunity?
+  changeEvents   PropertyChangeEvent[]
+  countyNotices  CountyNotice[]
+  watchlistItems WatchlistItem[]
+  notes          Note[]
+  tags           Tag[]
+
+  @@index([county])
+  @@index([state, county])
+  @@index([zipCode])
+  @@index([normalizedAddress])
+  @@index([county, propertyType])
+  @@index([taxDelinquent])
+  @@index([absenteeOwner])
+}
+
+model PropertySourceRecord {
+  id             String       @id @default(cuid())
+  propertyId     String
+  provider       ProviderName
+  externalId     String?
+  rawPayload     Json
+  normalizedData Json?
+  fetchedAt      DateTime
+  confidence     Float        @default(1.0)
+  createdAt      DateTime     @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId, provider])
+  @@index([provider, externalId])
+}
+
+model Opportunity {
+  id                   String        @id @default(cuid())
+  propertyId           String        @unique
+  flipScore            Float         @default(0)
+  distressStage        DistressStage
+  pipelineStage        PipelineStage @default(NEW)
+  estimatedARV         Float?
+  estimatedRehabCost   Float?
+  maxAllowableOffer    Float?
+  targetPurchasePrice  Float?
+  projectedGrossMargin Float?
+  projectedNetMargin   Float?
+  projectedDaysToFlip  Int?
+  auctionDate          DateTime?
+  daysUntilSale        Int?
+  sourceUrl            String?
+  notes                String?       @db.Text
+  isActive             Boolean       @default(true)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  property              Property               @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  alertEvents           AlertEvent[]
+  auctionEvents         AuctionEvent[]
+  underwritingSnapshots UnderwritingSnapshot[]
+  caseRecords           CaseRecord[]
+
+  @@index([flipScore(sort: Desc)])
+  @@index([pipelineStage])
+  @@index([distressStage])
+  @@index([isActive, pipelineStage])
+  @@index([auctionDate])
+  @@index([isActive, flipScore(sort: Desc)])
+  @@index([createdAt])
+}
+
+model CountyNotice {
+  id               String     @id @default(cuid())
+  propertyId       String?
+  county           String
+  noticeType       NoticeType
+  caseNumber       String?
+  saleDate         DateTime?
+  saleTime         String?
+  address          String?
+  plaintiff        String?
+  defendant        String?
+  legalDescription String?    @db.Text
+  depositTerms     String?
+  sourceUrl        String?
+  rawContent       String?    @db.Text
+  parsed           Json?
+  matchConfidence  Float?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([county, caseNumber])
+  @@index([county, noticeType])
+  @@index([saleDate])
+  @@index([propertyId])
+}
+
+model CaseRecord {
+  id            String    @id @default(cuid())
+  opportunityId String
+  caseNumber    String?
+  county        String?
+  court         String?
+  filingDate    DateTime?
+  status        String?
+  parties       Json?
+  documents     Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@index([county, caseNumber])
+}
+
+model AuctionEvent {
+  id              String   @id @default(cuid())
+  opportunityId   String
+  auctionDate     DateTime
+  auctionTime     String?
+  location        String?
+  auctionType     String?
+  minimumBid      Float?
+  depositRequired Float?
+  source          String?
+  status          String   @default("SCHEDULED")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@index([auctionDate])
+  @@index([status, auctionDate])
+}
+
+model AlertRule {
+  id             String       @id @default(cuid())
+  userId         String
+  name           String
+  alertType      AlertType
+  channel        AlertChannel @default(EMAIL)
+  filters        Json?
+  scoreThreshold Float?
+  countyFilter   String[]
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertEvents AlertEvent[]
+
+  @@index([userId])
+  @@index([isActive, alertType])
+}
+
+model AlertEvent {
+  id            String       @id @default(cuid())
+  alertRuleId   String?
+  opportunityId String?
+  alertType     AlertType
+  channel       AlertChannel
+  payload       Json?
+  sentAt        DateTime?
+  status        String       @default("PENDING")
+  error         String?      @db.Text
+  createdAt     DateTime     @default(now())
+
+  alertRule   AlertRule?   @relation(fields: [alertRuleId], references: [id], onDelete: SetNull)
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  @@index([alertRuleId])
+  @@index([opportunityId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SavedSearch {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  filters     Json
+  resultCount Int       @default(0)
+  lastRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model WatchlistItem {
+  id         String   @id @default(cuid())
+  userId     String
+  propertyId String
+  notes      String?
+  addedAt    DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@index([userId])
+  @@index([propertyId])
+}
+
+model PropertyChangeEvent {
+  id         String        @id @default(cuid())
+  propertyId String
+  field      String
+  oldValue   String?
+  newValue   String?
+  source     ProviderName?
+  detectedAt DateTime      @default(now())
+  createdAt  DateTime      @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([detectedAt])
+  @@index([propertyId, field])
+}
+
+model UnderwritingSnapshot {
+  id            String   @id @default(cuid())
+  opportunityId String
+  assumptions   Json
+  calculations  Json
+  createdBy     String?
+  createdAt     DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@index([createdAt])
+}
+
+model ProviderSyncJob {
+  id               String       @id @default(cuid())
+  provider         ProviderName
+  county           String?
+  status           SyncStatus   @default(PENDING)
+  recordsFound     Int          @default(0)
+  recordsProcessed Int          @default(0)
+  errors           Json?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  duration         Int?
+  createdAt        DateTime     @default(now())
+
+  @@index([provider, status])
+  @@index([county])
+  @@index([createdAt])
+}
+
+model CountyAdapterRun {
+  id               String     @id @default(cuid())
+  adapterName      String
+  county           String
+  status           SyncStatus @default(PENDING)
+  recordsFound     Int        @default(0)
+  recordsProcessed Int        @default(0)
+  errors           Json?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime   @default(now())
+
+  @@index([adapterName, county])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String @unique
+  color String?
+
+  properties Property[]
+}
+
+model Note {
+  id         String   @id @default(cuid())
+  content    String   @db.Text
+  propertyId String?
+  userId     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  property Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model AdminSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}

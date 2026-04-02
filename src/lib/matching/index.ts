@@ -1,0 +1,1 @@
+export { EntityMatcher } from './matcher';
