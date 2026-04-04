@@ -62,13 +62,17 @@ const BatchDataPropertySchema = z.object({
 export type BatchDataProperty = z.infer<typeof BatchDataPropertySchema>;
 
 const BatchDataSearchResponseSchema = z.object({
-  status: z.string().optional(),
+  status: z.any().optional(),
   results: z.object({
     properties: z.array(BatchDataPropertySchema).default([]),
     total: z.number().default(0),
     page: z.number().default(1),
     limit: z.number().default(25),
-  }),
+    meta: z.object({
+      totalCount: z.number().optional(),
+      resultCount: z.number().optional(),
+    }).passthrough().optional(),
+  }).passthrough(),
 }).passthrough();
 
 export type BatchDataSearchResponse = z.infer<typeof BatchDataSearchResponseSchema>;
@@ -154,7 +158,13 @@ export class BatchDataClient {
       };
     }
 
-    return parsed.data;
+    // Extract total from meta if not directly available
+    const data = parsed.data;
+    if (data.results.total === 0 && data.results.meta?.totalCount) {
+      data.results.total = data.results.meta.totalCount;
+    }
+
+    return data;
   }
 
   /**
@@ -201,8 +211,8 @@ export class BatchDataClient {
 
     try {
       const raw = await this.post("/property/search", {
-        address,
-        limit: 1,
+        searchCriteria: { query: address },
+        options: { take: 1 },
       });
       const parsed = BatchDataSearchResponseSchema.safeParse(raw);
 
@@ -309,7 +319,7 @@ export class BatchDataClient {
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       throw new Error(
-        `BatchData GET ${path} failed: ${response.status} ${response.statusText} – ${body}`,
+        `BatchData GET ${path} failed: ${response.status} ${response.statusText} \u2013 ${body}`,
       );
     }
 
@@ -335,7 +345,7 @@ export class BatchDataClient {
     if (!response.ok) {
       const text = await response.text().catch(() => "");
       throw new Error(
-        `BatchData POST ${path} failed: ${response.status} ${response.statusText} – ${text}`,
+        `BatchData POST ${path} failed: ${response.status} ${response.statusText} \u2013 ${text}`,
       );
     }
 
@@ -347,42 +357,45 @@ export class BatchDataClient {
   // -------------------------------------------------------------------------
 
   private buildSearchBody(params: PropertySearchParams): Record<string, unknown> {
-    const body: Record<string, unknown> = {
-      page: params.page ?? 1,
-      limit: params.limit ?? 25,
-    };
+    const searchCriteria: Record<string, unknown> = {};
+    const options: Record<string, unknown> = {};
 
-    if (params.county) body.county = params.county;
-    if (params.zipCodes?.length) body.zipCodes = params.zipCodes;
-    if (params.propertyTypes?.length) body.propertyTypes = params.propertyTypes;
-    if (params.minEquity !== undefined) body.minEquityPercent = params.minEquity;
-    if (params.maxPrice !== undefined) body.maxPrice = params.maxPrice;
-    if (params.minBeds !== undefined) body.minBedrooms = params.minBeds;
-    if (params.ownerOccupied !== undefined) body.ownerOccupied = params.ownerOccupied;
-    if (params.absenteeOwner !== undefined) body.absenteeOwner = params.absenteeOwner;
-
-    // Map distress stage filters to BatchData-specific parameters
-    if (params.distressStages?.length) {
-      body.distressFilters = params.distressStages.map((stage) =>
-        this.mapDistressStageToBatchData(stage),
-      );
+    // Location \u2013 use query for county + state (SC-focused for now)
+    if (params.county) {
+      searchCriteria.query = `${params.county} County, SC`;
     }
 
-    return body;
+    // Distress stage filters \u2192 BatchData orQuickLists (OR-ed, max 3)
+    if (params.distressStages?.length) {
+      const quickLists = params.distressStages
+        .map((stage) => this.mapDistressStageToBatchData(stage))
+        .filter(Boolean);
+      if (quickLists.length > 0) {
+        searchCriteria.orQuickLists = quickLists.slice(0, 3);
+      }
+    }
+
+    // Pagination \u2013 BatchData uses skip/take, not page/limit
+    const take = params.limit ?? 25;
+    const skip = ((params.page ?? 1) - 1) * take;
+    options.skip = skip;
+    options.take = take;
+
+    return { searchCriteria, options };
   }
 
   private mapDistressStageToBatchData(stage: string): string {
     const mapping: Record<string, string> = {
-      PRE_FORECLOSURE: "preForeclosure",
-      LIS_PENDENS: "lisPendens",
-      NOTICE_OF_DEFAULT: "noticeOfDefault",
-      NOTICE_OF_SALE: "noticeOfSale",
-      AUCTION_SCHEDULED: "auctionScheduled",
-      REO: "reo",
-      BANK_OWNED: "bankOwned",
-      TAX_LIEN: "taxLien",
-      PROBATE: "probate",
-      BANKRUPTCY: "bankruptcy",
+      PRE_FORECLOSURE: "preforeclosure",
+      LIS_PENDENS: "notice-of-lis-pendens",
+      NOTICE_OF_DEFAULT: "notice-of-default",
+      NOTICE_OF_SALE: "notice-of-sale",
+      AUCTION_SCHEDULED: "active-auction",
+      REO: "preforeclosure",
+      BANK_OWNED: "preforeclosure",
+      TAX_LIEN: "tax-default",
+      PROBATE: "preforeclosure",
+      BANKRUPTCY: "preforeclosure",
     };
     return mapping[stage] ?? stage.toLowerCase();
   }
