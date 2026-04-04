@@ -7,6 +7,7 @@ import { providerRegistry, initializeProviders } from '@/lib/providers';
 // ---------------------------------------------------------------------------
 // POST /api/sync/providers – Trigger a provider sync for specified counties
 // ---------------------------------------------------------------------------
+
 const TriggerSyncSchema = z.object({
   provider: z.enum(['BATCHDATA', 'ATTOM']),
   counties: z.array(z.string().min(1)).min(1),
@@ -60,67 +61,79 @@ export async function POST(req: NextRequest) {
       ),
     );
 
-    // Kick off sync in the background (non-blocking)
+    // Run sync for each county sequentially (Vercel kills async tasks after response)
     const jobIds = jobs.map((j) => j.id);
+    const results: Array<{ jobId: string; county: string; status: string; recordsFound: number }> = [];
 
-    // Fire-and-forget: run each county sync asynchronously
     for (const job of jobs) {
-      (async () => {
-        try {
-          await prisma.providerSyncJob.update({
-            where: { id: job.id },
-            data: { status: 'RUNNING', startedAt: new Date() },
-          });
+      try {
+        await prisma.providerSyncJob.update({
+          where: { id: job.id },
+          data: { status: 'RUNNING', startedAt: new Date() },
+        });
 
-          const startMs = Date.now();
+        const startMs = Date.now();
 
-          const results = await propertyProvider.searchProperties({
-            county: job.county ?? '',
-            distressStages: filters?.distressStages as any,
-            propertyTypes: filters?.propertyTypes as any,
-            maxPrice: filters?.maxPrice,
-            page: 1,
-            limit: 100,
-          });
+        const searchResults = await propertyProvider.searchProperties({
+          county: job.county ?? '',
+          distressStages: filters?.distressStages as any,
+          propertyTypes: filters?.propertyTypes as any,
+          maxPrice: filters?.maxPrice,
+          page: 1,
+          limit: 100,
+        });
 
-          const durationMs = Date.now() - startMs;
+        const durationMs = Date.now() - startMs;
 
-          await prisma.providerSyncJob.update({
+        await prisma.providerSyncJob.update({
+          where: { id: job.id },
+          data: {
+            status: 'COMPLETED',
+            recordsFound: searchResults.total,
+            recordsProcessed: searchResults.properties.length,
+            completedAt: new Date(),
+            duration: durationMs,
+          },
+        });
+
+        results.push({
+          jobId: job.id,
+          county: job.county ?? '',
+          status: 'COMPLETED',
+          recordsFound: searchResults.total,
+        });
+
+        logger.info(
+          { jobId: job.id, county: job.county, provider, records: searchResults.total },
+          'Provider sync completed',
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error({ jobId: job.id, err: message }, 'Provider sync failed');
+
+        await prisma.providerSyncJob
+          .update({
             where: { id: job.id },
             data: {
-              status: 'COMPLETED',
-              recordsFound: results.total,
-              recordsProcessed: results.properties.length,
+              status: 'FAILED',
+              errors: [message],
               completedAt: new Date(),
-              duration: durationMs,
             },
-          });
+          })
+          .catch(() => {});
 
-          logger.info(
-            { jobId: job.id, county: job.county, provider, records: results.total },
-            'Provider sync completed',
-          );
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          logger.error({ jobId: job.id, err: message }, 'Provider sync failed');
-
-          await prisma.providerSyncJob
-            .update({
-              where: { id: job.id },
-              data: {
-                status: 'FAILED',
-                errors: [message],
-                completedAt: new Date(),
-              },
-            })
-            .catch(() => {});
-        }
-      })();
+        results.push({
+          jobId: job.id,
+          county: job.county ?? '',
+          status: 'FAILED',
+          recordsFound: 0,
+        });
+      }
     }
 
     return NextResponse.json(
-      { data: { jobIds, status: 'STARTED' } },
-      { status: 202 },
+      { data: { jobIds, results, status: 'COMPLETED' } },
+      { status: 200 },
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
