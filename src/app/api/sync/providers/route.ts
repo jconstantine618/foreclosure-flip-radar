@@ -7,7 +7,6 @@ import { providerRegistry, initializeProviders } from '@/lib/providers';
 // ---------------------------------------------------------------------------
 // POST /api/sync/providers – Trigger a provider sync for specified counties
 // ---------------------------------------------------------------------------
-
 const TriggerSyncSchema = z.object({
   provider: z.enum(['BATCHDATA', 'ATTOM']),
   counties: z.array(z.string().min(1)).min(1),
@@ -38,7 +37,7 @@ export async function POST(req: NextRequest) {
     initializeProviders();
 
     const propertyProvider = providerRegistry.getPropertyProvider(
-      provider === 'BATCHDATA' ? 'BatchData' : 'ATTOM',
+      provider === 'BATCHDATA' ? 'batchdata' : 'attom',
     );
 
     if (!propertyProvider) {
