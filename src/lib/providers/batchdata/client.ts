@@ -5,7 +5,12 @@ import type { ProviderConfig, PropertySearchParams } from "@/types";
 // BatchData API response schemas (Zod validation)
 // ---------------------------------------------------------------------------
 
+// Schema is intentionally loose – BatchData returns deeply nested objects whose
+// shape varies by plan/dataset.  We use .passthrough() everywhere and z.any()
+// for fields whose type differs from what we originally assumed (e.g.
+// owner.mailingAddress is an object, not a string).
 const BatchDataPropertySchema = z.object({
+  _id: z.string().optional(),
   id: z.string().optional(),
   address: z.object({
     street: z.string().optional(),
@@ -13,15 +18,27 @@ const BatchDataPropertySchema = z.object({
     state: z.string().optional(),
     zip: z.string().optional(),
     county: z.string().optional(),
-  }).optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+  }).passthrough().optional(),
+  ids: z.object({
+    apn: z.string().optional(),
+  }).passthrough().optional(),
   parcel: z.object({
     apn: z.string().optional(),
     parcelNumber: z.string().optional(),
-  }).optional(),
+  }).passthrough().optional(),
   location: z.object({
     latitude: z.number().optional(),
     longitude: z.number().optional(),
-  }).optional(),
+  }).passthrough().optional(),
+  building: z.object({
+    yearBuilt: z.number().optional(),
+    bedroomCount: z.number().optional(),
+    bathroomCount: z.number().optional(),
+    livingAreaSquareFeet: z.number().optional(),
+    stories: z.number().optional(),
+  }).passthrough().optional(),
   property: z.object({
     type: z.string().optional(),
     bedrooms: z.number().optional(),
@@ -30,33 +47,46 @@ const BatchDataPropertySchema = z.object({
     lotSizeSqft: z.number().optional(),
     yearBuilt: z.number().optional(),
     stories: z.number().optional(),
-  }).optional(),
+  }).passthrough().optional(),
   owner: z.object({
+    fullName: z.string().optional(),
     name: z.string().optional(),
-    mailingAddress: z.string().optional(),
+    mailingAddress: z.any().optional(),
     ownerOccupied: z.boolean().optional(),
     absenteeOwner: z.boolean().optional(),
-  }).optional(),
+  }).passthrough().optional(),
   valuation: z.object({
     estimatedValue: z.number().optional(),
     assessedValue: z.number().optional(),
     lastSalePrice: z.number().optional(),
     lastSaleDate: z.string().optional(),
     taxAmount: z.number().optional(),
-  }).optional(),
+  }).passthrough().optional(),
+  sale: z.object({
+    lastSale: z.object({
+      price: z.number().optional(),
+      saleDate: z.string().optional(),
+    }).passthrough().optional(),
+  }).passthrough().optional(),
   mortgage: z.object({
     balance: z.number().optional(),
     equityEstimate: z.number().optional(),
     equityPercent: z.number().optional(),
     lienAmount: z.number().optional(),
-  }).optional(),
+  }).passthrough().optional(),
+  foreclosure: z.object({
+    documentType: z.string().optional(),
+    recordingDate: z.string().optional(),
+    defaultAmount: z.number().optional(),
+    auctionDate: z.string().optional(),
+  }).passthrough().optional(),
   distress: z.object({
     stage: z.string().optional(),
     listingPrice: z.number().optional(),
     auctionDate: z.string().optional(),
     defaultAmount: z.number().optional(),
     recordingDate: z.string().optional(),
-  }).optional(),
+  }).passthrough().optional(),
 }).passthrough();
 
 export type BatchDataProperty = z.infer<typeof BatchDataPropertySchema>;
@@ -104,7 +134,7 @@ interface RateLimitInfo {
 }
 
 // ---------------------------------------------------------------------------
-// Cache interface – implementations can be swapped in (Redis, in-memory, etc.)
+// Cache interface \u2013 implementations can be swapped in (Redis, in-memory, etc.)
 // ---------------------------------------------------------------------------
 
 export interface BatchDataCacheAdapter {
@@ -160,8 +190,9 @@ export class BatchDataClient {
 
     // Extract total from meta if not directly available
     const data = parsed.data;
-    if (data.results.total === 0 && data.results.meta?.totalCount) {
-      data.results.total = data.results.meta.totalCount;
+    const metaAny = data.results.meta as Record<string, any> | undefined;
+    if (data.results.total === 0 && metaAny?.results?.resultsFound) {
+      data.results.total = metaAny.results.resultsFound;
     }
 
     return data;
@@ -234,7 +265,7 @@ export class BatchDataClient {
   }
 
   /**
-   * Skip trace – feature-gated behind ENABLE_SKIP_TRACE env var.
+   * Skip trace \u2013 feature-gated behind ENABLE_SKIP_TRACE env var.
    */
   async skipTrace(params: {
     name?: string;
