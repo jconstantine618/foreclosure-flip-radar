@@ -6,7 +6,7 @@ import type {
   DistressStage,
   PropertyType,
 } from "@/types";
-import type { PropertyProvider } from "../interfaces";
+import type { PropertyProvider, ComparableSale } from "../interfaces";
 import { BatchDataClient, type BatchDataProperty } from "./client";
 
 // ---------------------------------------------------------------------------
@@ -82,6 +82,54 @@ export class BatchDataPropertyProvider implements PropertyProvider {
   }
 
   // -------------------------------------------------------------------------
+  // Comparables
+  // -------------------------------------------------------------------------
+
+  /**
+   * Fetch comparable recently-sold properties for a given address.
+   * Each comp costs one API call ($0.01).
+   */
+  async getComparables(params: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+    take?: number;
+    distanceMiles?: number;
+  }): Promise<{ comps: ComparableSale[]; totalFound: number }> {
+    const response = await this.client.getComps(params);
+
+    const comps: ComparableSale[] = response.results.properties.map((p) => {
+      const r = p as Record<string, any>;
+      const salePrice = r.sale?.lastSale?.price ?? r.valuation?.lastSalePrice ?? 0;
+      const sqft = r.building?.livingAreaSquareFeet ?? r.property?.sqft ?? null;
+
+      return {
+        address: r.address?.street ?? "",
+        city: r.address?.city ?? "",
+        state: r.address?.state ?? "",
+        zipCode: r.address?.zip ?? "",
+        salePrice,
+        saleDate: r.sale?.lastSale?.saleDate ?? null,
+        sqft,
+        bedrooms: r.building?.bedroomCount ?? r.property?.bedrooms ?? null,
+        bathrooms: r.building?.bathroomCount ?? r.property?.bathrooms ?? null,
+        yearBuilt: r.building?.yearBuilt ?? null,
+        lotSizeSqft: r.lot?.lotSizeSquareFeet ?? null,
+        distanceMiles: r.distance?.miles ?? null,
+        pricePerSqft: salePrice && sqft ? Math.round(salePrice / sqft) : null,
+        externalId: r._id ?? r.id ?? null,
+        rawData: r,
+      };
+    });
+
+    // Filter to only properties with actual sale data
+    const validComps = comps.filter((c) => c.salePrice > 0);
+
+    return { comps: validComps, totalFound: response.results.total };
+  }
+
+  // -------------------------------------------------------------------------
   // Mapping
   // -------------------------------------------------------------------------
 
@@ -91,7 +139,7 @@ export class BatchDataPropertyProvider implements PropertyProvider {
     // foreclosure.* for distress info, ids.apn for parcel number, etc.
     const r = raw as Record<string, any>;
 
-    // Resolve mailing address \u2013 may be an object or a string
+    // Resolve mailing address – may be an object or a string
     let ownerMailingAddr: string | null = null;
     if (r.owner?.mailingAddress) {
       if (typeof r.owner.mailingAddress === "string") {
@@ -194,13 +242,10 @@ function mapDistressStage(raw: string | undefined): DistressStage | null {
     pre_foreclosure: "PRE_FORECLOSURE",
     lispendens: "LIS_PENDENS",
     lis_pendens: "LIS_PENDENS",
-    "lis pendens": "LIS_PENDENS",
     noticeofdefault: "NOTICE_OF_DEFAULT",
     notice_of_default: "NOTICE_OF_DEFAULT",
-    "notice of default": "NOTICE_OF_DEFAULT",
     noticeofsale: "NOTICE_OF_SALE",
     notice_of_sale: "NOTICE_OF_SALE",
-    "notice of sale": "NOTICE_OF_SALE",
     auctionscheduled: "AUCTION_SCHEDULED",
     auction_scheduled: "AUCTION_SCHEDULED",
     reo: "REO",
@@ -208,7 +253,6 @@ function mapDistressStage(raw: string | undefined): DistressStage | null {
     bank_owned: "BANK_OWNED",
     taxlien: "TAX_LIEN",
     tax_lien: "TAX_LIEN",
-    "tax default": "TAX_LIEN",
     probate: "PROBATE",
     bankruptcy: "BANKRUPTCY",
   };
