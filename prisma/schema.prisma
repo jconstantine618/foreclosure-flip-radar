@@ -157,13 +157,14 @@ model Property {
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
-  sourceRecords  PropertySourceRecord[]
-  opportunity    Opportunity?
-  changeEvents   PropertyChangeEvent[]
-  countyNotices  CountyNotice[]
-  watchlistItems WatchlistItem[]
-  notes          Note[]
-  tags           Tag[]
+  sourceRecords   PropertySourceRecord[]
+  opportunity     Opportunity?
+  changeEvents    PropertyChangeEvent[]
+  countyNotices   CountyNotice[]
+  watchlistItems  WatchlistItem[]
+  notes           Note[]
+  tags            Tag[]
+  comparableSales ComparableSale[]
 
   @@index([county])
   @@index([state, county])
@@ -455,6 +456,34 @@ model Note {
   @@index([propertyId])
   @@index([userId])
   @@index([createdAt])
+}
+
+model ComparableSale {
+  id            String   @id @default(cuid())
+  propertyId    String
+  address       String
+  city          String?
+  state         String?
+  zipCode       String?
+  salePrice     Float
+  saleDate      DateTime?
+  sqft          Int?
+  bedrooms      Int?
+  bathrooms     Float?
+  yearBuilt     Int?
+  lotSizeSqft   Int?
+  distanceMiles Float?
+  pricePerSqft  Float?
+  provider      String   @default("batchdata")
+  externalId    String?
+  rawData       Json?
+  fetchedAt     DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@index([propertyId, fetchedAt])
 }
 
 model AdminSetting {
