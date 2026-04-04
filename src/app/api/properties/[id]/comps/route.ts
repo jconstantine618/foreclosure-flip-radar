@@ -10,10 +10,10 @@ import { BatchDataPropertyProvider } from "@/lib/providers/batchdata/provider";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const propertyId = params.id;
+        const { id: propertyId } = await params;
     const forceRefresh = req.nextUrl.searchParams.get("refresh") === "true";
 
     // 1. Look up the subject property
