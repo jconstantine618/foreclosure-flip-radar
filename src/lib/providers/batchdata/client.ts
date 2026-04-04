@@ -5,7 +5,7 @@ import type { ProviderConfig, PropertySearchParams } from "@/types";
 // BatchData API response schemas (Zod validation)
 // ---------------------------------------------------------------------------
 
-// Schema is intentionally loose – BatchData returns deeply nested objects whose
+// Schema is intentionally loose \u2013 BatchData returns deeply nested objects whose
 // shape varies by plan/dataset.  We use .passthrough() everywhere and z.any()
 // for fields whose type differs from what we originally assumed (e.g.
 // owner.mailingAddress is an object, not a string).
@@ -180,8 +180,6 @@ export class BatchDataClient {
     const parsed = BatchDataSearchResponseSchema.safeParse(raw);
 
     if (!parsed.success) {
-      // TODO: log.warn("BatchData response validation failed", parsed.error)
-      // Fall back to raw data with default shape
       return {
         status: "ok",
         results: { properties: [], total: 0, page: params.page ?? 1, limit: params.limit ?? 25 },
@@ -214,17 +212,15 @@ export class BatchDataClient {
       const parsed = BatchDataPropertySchema.safeParse(raw);
 
       if (!parsed.success) {
-        // TODO: log.warn("BatchData property validation failed", parsed.error)
         return null;
       }
 
       if (this.cache) {
-        await this.cache.set(cacheKey, parsed.data, 3600); // cache 1 hour
+        await this.cache.set(cacheKey, parsed.data, 3600);
       }
 
       return parsed.data;
     } catch (err) {
-      // TODO: log.error("BatchData getPropertyDetails failed", err)
       return null;
     }
   }
@@ -259,9 +255,65 @@ export class BatchDataClient {
 
       return property;
     } catch (err) {
-      // TODO: log.error("BatchData getPropertyByAddress failed", err)
       return null;
     }
+  }
+
+  /**
+   * Fetch comparable recently-sold properties for a subject address.
+   * Uses BatchData's compAddress search criteria with configurable filters.
+   */
+  async getComps(params: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+    take?: number;
+    distanceMiles?: number;
+  }): Promise<BatchDataSearchResponse> {
+    const body = {
+      searchCriteria: {
+        compAddress: {
+          street: params.street,
+          city: params.city,
+          state: params.state,
+          zip: params.zip,
+        },
+      },
+      options: {
+        skip: 0,
+        take: params.take ?? 15,
+        useDistance: true,
+        distanceMiles: params.distanceMiles ?? 1,
+        useBedrooms: true,
+        minBedrooms: -1,
+        maxBedrooms: 1,
+        useArea: true,
+        minAreaPercent: -25,
+        maxAreaPercent: 25,
+        useYearBuilt: true,
+        minYearBuilt: -15,
+        maxYearBuilt: 15,
+      },
+    };
+
+    const raw = await this.post("/property/search", body);
+    const parsed = BatchDataSearchResponseSchema.safeParse(raw);
+
+    if (!parsed.success) {
+      return {
+        status: "ok",
+        results: { properties: [], total: 0, page: 1, limit: params.take ?? 15 },
+      };
+    }
+
+    const data = parsed.data;
+    const metaAny = data.results.meta as Record<string, any> | undefined;
+    if (data.results.total === 0 && metaAny?.results?.resultsFound) {
+      data.results.total = metaAny.results.resultsFound;
+    }
+
+    return data;
   }
 
   /**
@@ -274,22 +326,15 @@ export class BatchDataClient {
     email?: string;
   }): Promise<z.infer<typeof BatchDataSkipTraceResponseSchema> | null> {
     if (process.env.ENABLE_SKIP_TRACE !== "true") {
-      // TODO: log.debug("Skip trace is disabled via ENABLE_SKIP_TRACE env")
       return null;
     }
 
     try {
       const raw = await this.post("/skip-trace", params);
       const parsed = BatchDataSkipTraceResponseSchema.safeParse(raw);
-
-      if (!parsed.success) {
-        // TODO: log.warn("BatchData skip trace validation failed", parsed.error)
-        return null;
-      }
-
+      if (!parsed.success) return null;
       return parsed.data;
     } catch (err) {
-      // TODO: log.error("BatchData skipTrace failed", err)
       return null;
     }
   }
@@ -323,7 +368,6 @@ export class BatchDataClient {
       this.rateLimitInfo.resetAt > new Date()
     ) {
       const waitMs = this.rateLimitInfo.resetAt.getTime() - Date.now();
-      // TODO: log.warn(`BatchData rate limited, waiting ${waitMs}ms`)
       await new Promise((resolve) => setTimeout(resolve, Math.min(waitMs, 60_000)));
     }
   }
@@ -334,7 +378,6 @@ export class BatchDataClient {
 
   private async get(path: string): Promise<unknown> {
     await this.checkRateLimit();
-
     const url = `${this.baseUrl}${path}`;
     const response = await fetch(url, {
       method: "GET",
@@ -344,22 +387,16 @@ export class BatchDataClient {
         Accept: "application/json",
       },
     });
-
     this.parseRateLimitHeaders(response.headers);
-
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(
-        `BatchData GET ${path} failed: ${response.status} ${response.statusText} \u2013 ${body}`,
-      );
+      throw new Error(`BatchData GET ${path} failed: ${response.status} ${response.statusText} \u2013 ${body}`);
     }
-
     return response.json();
   }
 
   private async post(path: string, body: unknown): Promise<unknown> {
     await this.checkRateLimit();
-
     const url = `${this.baseUrl}${path}`;
     const response = await fetch(url, {
       method: "POST",
@@ -370,16 +407,11 @@ export class BatchDataClient {
       },
       body: JSON.stringify(body),
     });
-
     this.parseRateLimitHeaders(response.headers);
-
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(
-        `BatchData POST ${path} failed: ${response.status} ${response.statusText} \u2013 ${text}`,
-      );
+      throw new Error(`BatchData POST ${path} failed: ${response.status} ${response.statusText} \u2013 ${text}`);
     }
-
     return response.json();
   }
 
@@ -391,12 +423,10 @@ export class BatchDataClient {
     const searchCriteria: Record<string, unknown> = {};
     const options: Record<string, unknown> = {};
 
-    // Location \u2013 use query for county + state (SC-focused for now)
     if (params.county) {
       searchCriteria.query = `${params.county} County, SC`;
     }
 
-    // Distress stage filters \u2192 BatchData orQuickLists (OR-ed, max 3)
     if (params.distressStages?.length) {
       const quickLists = params.distressStages
         .map((stage) => this.mapDistressStageToBatchData(stage))
@@ -406,7 +436,6 @@ export class BatchDataClient {
       }
     }
 
-    // Pagination \u2013 BatchData uses skip/take, not page/limit
     const take = params.limit ?? 25;
     const skip = ((params.page ?? 1) - 1) * take;
     options.skip = skip;
