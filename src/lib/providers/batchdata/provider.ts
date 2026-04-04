@@ -86,54 +86,72 @@ export class BatchDataPropertyProvider implements PropertyProvider {
   // -------------------------------------------------------------------------
 
   private mapToNormalizedProperty(raw: BatchDataProperty): NormalizedProperty {
+    // BatchData uses _id, address.latitude/longitude, owner.fullName,
+    // building.* for property details, sale.lastSale for sale data,
+    // foreclosure.* for distress info, ids.apn for parcel number, etc.
+    const r = raw as Record<string, any>;
+
+    // Resolve mailing address \u2013 may be an object or a string
+    let ownerMailingAddr: string | null = null;
+    if (r.owner?.mailingAddress) {
+      if (typeof r.owner.mailingAddress === "string") {
+        ownerMailingAddr = r.owner.mailingAddress;
+      } else if (typeof r.owner.mailingAddress === "object") {
+        const ma = r.owner.mailingAddress;
+        ownerMailingAddr = [ma.street, ma.city, ma.state, ma.zip]
+          .filter(Boolean)
+          .join(", ");
+      }
+    }
+
     return {
-      externalId: raw.id ?? undefined,
+      externalId: r._id ?? r.id ?? undefined,
       provider: this.name,
 
       // Location
-      address: raw.address?.street ?? "",
-      city: raw.address?.city ?? "",
-      state: raw.address?.state ?? "",
-      zipCode: raw.address?.zip ?? "",
-      county: raw.address?.county ?? "",
-      parcelNumber: raw.parcel?.parcelNumber ?? raw.parcel?.apn ?? null,
-      latitude: raw.location?.latitude ?? null,
-      longitude: raw.location?.longitude ?? null,
+      address: r.address?.street ?? "",
+      city: r.address?.city ?? "",
+      state: r.address?.state ?? "",
+      zipCode: r.address?.zip ?? "",
+      county: r.address?.county ?? "",
+      parcelNumber: r.ids?.apn ?? r.parcel?.parcelNumber ?? r.parcel?.apn ?? null,
+      latitude: r.address?.latitude ?? r.location?.latitude ?? null,
+      longitude: r.address?.longitude ?? r.location?.longitude ?? null,
 
-      // Property details
-      propertyType: mapPropertyType(raw.property?.type),
-      bedrooms: raw.property?.bedrooms ?? null,
-      bathrooms: raw.property?.bathrooms ?? null,
-      sqft: raw.property?.sqft ?? null,
-      lotSizeSqft: raw.property?.lotSizeSqft ?? null,
-      yearBuilt: raw.property?.yearBuilt ?? null,
-      stories: raw.property?.stories ?? null,
+      // Property details (building.* or property.*)
+      propertyType: mapPropertyType(r.building?.propertyType ?? r.property?.type),
+      bedrooms: r.building?.bedroomCount ?? r.property?.bedrooms ?? null,
+      bathrooms: r.building?.bathroomCount ?? r.property?.bathrooms ?? null,
+      sqft: r.building?.livingAreaSquareFeet ?? r.property?.sqft ?? null,
+      lotSizeSqft: r.lot?.lotSizeSquareFeet ?? r.property?.lotSizeSqft ?? null,
+      yearBuilt: r.building?.yearBuilt ?? r.property?.yearBuilt ?? null,
+      stories: r.building?.stories ?? r.property?.stories ?? null,
 
       // Ownership
-      ownerName: raw.owner?.name ?? null,
-      ownerAddress: raw.owner?.mailingAddress ?? null,
-      ownerOccupied: raw.owner?.ownerOccupied ?? null,
-      absenteeOwner: raw.owner?.absenteeOwner ?? null,
+      ownerName: r.owner?.fullName ?? r.owner?.name ?? null,
+      ownerAddress: ownerMailingAddr,
+      ownerOccupied: r.owner?.ownerOccupied ?? null,
+      absenteeOwner: r.owner?.absenteeOwner ?? null,
 
       // Valuation
-      estimatedValue: raw.valuation?.estimatedValue ?? null,
-      assessedValue: raw.valuation?.assessedValue ?? null,
-      lastSalePrice: raw.valuation?.lastSalePrice ?? null,
-      lastSaleDate: raw.valuation?.lastSaleDate ?? null,
-      taxAmount: raw.valuation?.taxAmount ?? null,
+      estimatedValue: r.valuation?.estimatedValue ?? null,
+      assessedValue: r.valuation?.assessedValue ?? r.assessment?.assessedValue ?? null,
+      lastSalePrice: r.sale?.lastSale?.price ?? r.valuation?.lastSalePrice ?? null,
+      lastSaleDate: r.sale?.lastSale?.saleDate ?? r.valuation?.lastSaleDate ?? null,
+      taxAmount: r.tax?.totalTaxAmount ?? r.valuation?.taxAmount ?? null,
 
       // Mortgage / equity
-      mortgageBalance: raw.mortgage?.balance ?? null,
-      equityEstimate: raw.mortgage?.equityEstimate ?? null,
-      equityPercent: raw.mortgage?.equityPercent ?? null,
-      lienAmount: raw.mortgage?.lienAmount ?? null,
+      mortgageBalance: r.mortgage?.balance ?? null,
+      equityEstimate: r.mortgage?.equityEstimate ?? null,
+      equityPercent: r.mortgage?.equityPercent ?? null,
+      lienAmount: r.mortgage?.lienAmount ?? null,
 
-      // Distress
-      distressStage: mapDistressStage(raw.distress?.stage),
-      listingPrice: raw.distress?.listingPrice ?? null,
-      auctionDate: raw.distress?.auctionDate ?? null,
-      defaultAmount: raw.distress?.defaultAmount ?? null,
-      recordingDate: raw.distress?.recordingDate ?? null,
+      // Distress (foreclosure.* or distress.*)
+      distressStage: mapDistressStage(r.foreclosure?.documentType ?? r.distress?.stage),
+      listingPrice: r.listing?.price ?? r.distress?.listingPrice ?? null,
+      auctionDate: r.foreclosure?.auctionDate ?? r.distress?.auctionDate ?? null,
+      defaultAmount: r.foreclosure?.defaultAmount ?? r.distress?.defaultAmount ?? null,
+      recordingDate: r.foreclosure?.recordingDate ?? r.distress?.recordingDate ?? null,
 
       // Raw data for debugging / auditing
       rawData: raw as unknown as Record<string, unknown>,
@@ -176,10 +194,13 @@ function mapDistressStage(raw: string | undefined): DistressStage | null {
     pre_foreclosure: "PRE_FORECLOSURE",
     lispendens: "LIS_PENDENS",
     lis_pendens: "LIS_PENDENS",
+    "lis pendens": "LIS_PENDENS",
     noticeofdefault: "NOTICE_OF_DEFAULT",
     notice_of_default: "NOTICE_OF_DEFAULT",
+    "notice of default": "NOTICE_OF_DEFAULT",
     noticeofsale: "NOTICE_OF_SALE",
     notice_of_sale: "NOTICE_OF_SALE",
+    "notice of sale": "NOTICE_OF_SALE",
     auctionscheduled: "AUCTION_SCHEDULED",
     auction_scheduled: "AUCTION_SCHEDULED",
     reo: "REO",
@@ -187,6 +208,7 @@ function mapDistressStage(raw: string | undefined): DistressStage | null {
     bank_owned: "BANK_OWNED",
     taxlien: "TAX_LIEN",
     tax_lien: "TAX_LIEN",
+    "tax default": "TAX_LIEN",
     probate: "PROBATE",
     bankruptcy: "BANKRUPTCY",
   };
