@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,129 +67,42 @@ interface Notice {
   publishedDate: string;
 }
 
-// ---------- mock data ----------
-const MOCK_NOTICES: Notice[] = [
-  {
-    id: "n1",
-    noticeType: "MIE",
-    county: "Greenville",
-    caseNumber: "2026-CP-23-01842",
-    address: "104 Maple Creek Dr, Greenville, SC 29607",
-    plaintiff: "First National Bank",
-    defendant: "James T. Wilson",
-    saleDate: "2026-04-02",
-    matchedPropertyId: "prop-001",
-    sourceUrl: "https://greenvillecounty.org/clerk/sales/2026-04-02",
-    rawText:
-      "MASTER IN EQUITY SALE - Case No. 2026-CP-23-01842. First National Bank, Plaintiff, vs. James T. Wilson, Defendant. Sale of real property located at 104 Maple Creek Dr, Greenville, SC 29607. Parcel #0534.00-01-009.00. Sale date: April 2, 2026 at 10:00 AM at the Greenville County Courthouse.",
-    publishedDate: "2026-03-15",
-  },
-  {
-    id: "n2",
-    noticeType: "Upset Bid",
-    county: "Greenville",
-    caseNumber: "2026-CP-23-01105",
-    address: "2215 Pelham Rd, Greenville, SC 29615",
-    plaintiff: "Wells Fargo Home Mortgage",
-    defendant: "Maria L. Gonzalez",
-    saleDate: "2026-04-03",
-    matchedPropertyId: "prop-002",
-    sourceUrl: "https://greenvillecounty.org/clerk/upset/2026-04-03",
-    rawText:
-      "NOTICE OF UPSET BID - Case No. 2026-CP-23-01105. Wells Fargo Home Mortgage, Plaintiff, vs. Maria L. Gonzalez, Defendant. Property at 2215 Pelham Rd, Greenville, SC 29615. An upset bid of $142,000 has been filed. The next bid must exceed by at least 5%. Deadline: April 3, 2026.",
-    publishedDate: "2026-03-18",
-  },
-  {
-    id: "n3",
-    noticeType: "Lis Pendens",
-    county: "Horry",
-    caseNumber: "2026-CP-26-00743",
-    address: "503 Ocean Blvd, Myrtle Beach, SC 29577",
-    plaintiff: "Bank of America, N.A.",
-    defendant: "Robert and Sandra Chen",
-    saleDate: "2026-04-06",
-    matchedPropertyId: "prop-003",
-    sourceUrl: "https://horrycounty.org/records/lis-pendens/2026-00743",
-    rawText:
-      "LIS PENDENS - Case No. 2026-CP-26-00743. Bank of America, N.A., Plaintiff, vs. Robert and Sandra Chen, Defendants. Notice is hereby given that an action has been commenced affecting title to real property at 503 Ocean Blvd, Myrtle Beach, SC 29577. Parcel #174-00-04-028.",
-    publishedDate: "2026-03-10",
-  },
-  {
-    id: "n4",
-    noticeType: "Tax Sale",
-    county: "Horry",
-    caseNumber: "TAX-2026-HRY-0412",
-    address: "7801 Kings Hwy, Myrtle Beach, SC 29572",
-    plaintiff: "Horry County Tax Collector",
-    defendant: "Estate of William T. Brooks",
-    saleDate: "2026-04-08",
-    matchedPropertyId: "prop-004",
-    sourceUrl: "https://horrycounty.org/tax/delinquent/2026",
-    rawText:
-      "DELINQUENT TAX SALE - Tax ID: TAX-2026-HRY-0412. Property at 7801 Kings Hwy, Myrtle Beach, SC 29572. Owner of record: Estate of William T. Brooks. Delinquent taxes: $4,218.32. Minimum bid: $32,000. Sale date: April 8, 2026 at 2:00 PM.",
-    publishedDate: "2026-03-01",
-  },
-  {
-    id: "n5",
-    noticeType: "MIE",
-    county: "Greenville",
-    caseNumber: "2026-CP-23-02044",
-    address: null,
-    plaintiff: "JPMorgan Chase Bank, N.A.",
-    defendant: "Kevin D. Thompson",
-    saleDate: "2026-04-10",
-    matchedPropertyId: null,
-    sourceUrl: "https://greenvillecounty.org/clerk/sales/2026-04-10",
-    rawText:
-      "MASTER IN EQUITY SALE - Case No. 2026-CP-23-02044. JPMorgan Chase Bank, N.A., Plaintiff, vs. Kevin D. Thompson, Defendant. Sale of real property described as Lot 14, Block B, Cedar Ridge Subdivision. Sale date: April 10, 2026 at 10:00 AM.",
-    publishedDate: "2026-03-20",
-  },
-  {
-    id: "n6",
-    noticeType: "Public Notice",
-    county: "Horry",
-    caseNumber: "PN-2026-HRY-0088",
-    address: "1500 Hwy 17 S, Surfside Beach, SC 29575",
-    plaintiff: "Nationstar Mortgage LLC",
-    defendant: "Angela R. Davis",
-    saleDate: "2026-04-14",
-    matchedPropertyId: null,
-    sourceUrl: "https://horrycounty.org/notices/2026-0088",
-    rawText:
-      "PUBLIC NOTICE - Nationstar Mortgage LLC has filed a foreclosure action against Angela R. Davis for property located at 1500 Hwy 17 S, Surfside Beach, SC 29575. Hearing scheduled April 14, 2026.",
-    publishedDate: "2026-03-22",
-  },
-  {
-    id: "n7",
-    noticeType: "Upset Bid",
-    county: "Greenville",
-    caseNumber: "2026-CP-23-01330",
-    address: "334 N Main St, Mauldin, SC 29662",
-    plaintiff: "Truist Bank",
-    defendant: "Patricia M. Edwards",
-    saleDate: "2026-04-18",
-    matchedPropertyId: "prop-007",
-    sourceUrl: "https://greenvillecounty.org/clerk/upset/2026-04-18",
-    rawText:
-      "NOTICE OF UPSET BID - Case No. 2026-CP-23-01330. Truist Bank, Plaintiff, vs. Patricia M. Edwards, Defendant. Property at 334 N Main St, Mauldin, SC 29662. Current high bid: $275,000. Upset bid deadline: April 18, 2026.",
-    publishedDate: "2026-03-25",
-  },
-  {
-    id: "n8",
-    noticeType: "Lis Pendens",
-    county: "Greenville",
-    caseNumber: "2026-CP-23-02188",
-    address: "212 Augusta St, Greenville, SC 29601",
-    plaintiff: "U.S. Bank National Association",
-    defendant: "Thomas and Lisa Harmon",
-    saleDate: "2026-04-22",
-    matchedPropertyId: null,
-    sourceUrl: "https://greenvillecounty.org/records/lis-pendens/2026-02188",
-    rawText:
-      "LIS PENDENS - Case No. 2026-CP-23-02188. U.S. Bank National Association, Plaintiff, vs. Thomas and Lisa Harmon, Defendants. Action commenced affecting title to 212 Augusta St, Greenville, SC 29601. Parcel #0042.00-01-015.00.",
-    publishedDate: "2026-03-28",
-  },
-];
+// ---------- helper functions ----------
+function distressStageToNoticeType(
+  distressStage: string
+): NoticeType {
+  const mapping: Record<string, NoticeType> = {
+    AUCTION: "MIE",
+    LIS_PENDENS: "Lis Pendens",
+    TAX_LIEN: "Tax Sale",
+    PRE_FORECLOSURE: "Public Notice",
+    BANK_OWNED: "Public Notice",
+    REO: "Public Notice",
+  };
+  return mapping[distressStage] || "Public Notice";
+}
+
+// ---------- API types ----------
+interface OpportunityProperty {
+  streetAddress: string | null;
+  city: string | null;
+  county: string | null;
+  state: string | null;
+  zipCode: string | null;
+  estimatedValue: number | null;
+  equityEstimate: number | null;
+}
+
+interface Opportunity {
+  id: string;
+  flipScore: number | null;
+  distressStage: string;
+  pipelineStage: string;
+  auctionDate: string | null;
+  createdAt: string;
+  propertyId: string | null;
+  property: OpportunityProperty;
+}
 
 const NOTICE_TYPE_VARIANTS: Record<
   NoticeType,
@@ -215,9 +128,63 @@ export default function NoticesPage() {
   const [dateRange, setDateRange] = useState<DateRange>("all");
   const [matchedOnly, setMatchedOnly] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch opportunities and convert to notices
+  useEffect(() => {
+    async function fetchNotices() {
+      try {
+        setLoading(true);
+        const response = await fetch(
+          "/api/opportunities?limit=100&sort=auctionDate&order=asc"
+        );
+        if (!response.ok) throw new Error("Failed to fetch opportunities");
+        const data = await response.json();
+        const opportunities: Opportunity[] = data.opportunities || [];
+
+        // Map opportunities to notices
+        const mappedNotices: Notice[] = opportunities.map((opp) => {
+          const fullAddress =
+            opp.property?.streetAddress &&
+            opp.property?.city &&
+            opp.property?.state &&
+            opp.property?.zipCode
+              ? `${opp.property.streetAddress}, ${opp.property.city}, ${opp.property.state} ${opp.property.zipCode}`
+              : null;
+
+          return {
+            id: opp.id,
+            noticeType: distressStageToNoticeType(opp.distressStage),
+            county: opp.property?.county || "Unknown",
+            caseNumber: `FFR-${opp.id.slice(-8).toUpperCase()}`,
+            address: fullAddress,
+            plaintiff: "Lender",
+            defendant: "Borrower",
+            saleDate: opp.auctionDate
+              ? opp.auctionDate.split("T")[0]
+              : opp.createdAt.split("T")[0],
+            matchedPropertyId: opp.propertyId,
+            sourceUrl: "#",
+            rawText: `Foreclosure notice for property at ${fullAddress || "Unknown address"}. Stage: ${opp.distressStage}. Flip score: ${opp.flipScore || "N/A"}.`,
+            publishedDate: opp.createdAt.split("T")[0],
+          };
+        });
+
+        setNotices(mappedNotices);
+      } catch (error) {
+        console.error("Error fetching notices:", error);
+        setNotices([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchNotices();
+  }, []);
 
   const filtered = useMemo(() => {
-    return MOCK_NOTICES.filter((n) => {
+    return notices.filter((n) => {
       if (county !== "ALL" && n.county !== county) return false;
       if (noticeType !== "ALL" && n.noticeType !== noticeType) return false;
       if (matchedOnly && !n.matchedPropertyId) return false;
@@ -333,7 +300,13 @@ export default function NoticesPage() {
       </Card>
 
       {/* Notices List */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <p className="text-muted-foreground">Loading notices...</p>
+          </CardContent>
+        </Card>
+      ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <FileText className="mb-3 h-10 w-10 text-muted-foreground opacity-40" />
@@ -468,7 +441,7 @@ export default function NoticesPage() {
 
       {/* Summary */}
       <div className="text-sm text-muted-foreground">
-        Showing {filtered.length} of {MOCK_NOTICES.length} notices
+        Showing {filtered.length} of {notices.length} notices
       </div>
     </div>
   );
