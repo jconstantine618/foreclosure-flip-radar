@@ -169,7 +169,7 @@ export default function OpportunityDetailPage() {
             persistedAnalysis = stored.aiAnalysis || null;
           }
         } catch {
-          // notes field isn't JSON — ignore
+          // notes field isn't JSON â ignore
         }
         // Merge property.notes (from DB Note model) with persisted user notes
         const dbNotes = (json.data.property?.notes || []).map((n: any) => ({
@@ -266,6 +266,14 @@ export default function OpportunityDetailPage() {
       setCompsLoading(false);
     }
   }
+
+  // Auto-fetch comps when opportunity data loads
+  useEffect(() => {
+    if (apiData?.propertyId) {
+      fetchComps(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiData?.propertyId]);
 
   if (loading) {
     return (
@@ -673,14 +681,26 @@ export default function OpportunityDetailPage() {
                 </div>
               )}
 
-              {!compsLoading && comps.length === 0 && !compsError && (
+              {!compsLoading && comps.length === 0 && !compsError && !arvStats?.median && (
                 <div className="text-center py-6">
                   <p className="text-sm text-muted-foreground mb-3">
                     Pull comparable sales to estimate ARV and validate your deal economics.
                   </p>
                   <Button onClick={() => fetchComps(false)} disabled={compsLoading}>
-                    <TrendingUp className="mr-2 h-4 w-4" />
+                          <TrendingUp className="mr-2 h-4 w-4" />
                     Fetch Comparable Sales
+                  </Button>
+                </div>
+              )}
+
+              {!compsLoading && comps.length === 0 && !compsError && arvStats?.median && (
+                <div className="text-center py-3">
+                  <p className="text-xs text-amber-600">
+                    No comparable sales found nearby. ARV is based on property valuation records.
+                  </p>
+                  <Button size="sm" variant="outline" className="mt-2" onClick={() => fetchComps(true)} disabled={compsLoading}>
+                    <RefreshCw className="mr-1 h-3 w-3" />
+                    Try Again
                   </Button>
                 </div>
               )}
@@ -701,7 +721,7 @@ export default function OpportunityDetailPage() {
                     <div>
                       <p className="text-xs text-green-600">Range</p>
                       <p className="text-sm font-medium text-green-800">
-                        ${arvStats.low?.toLocaleString() || "?"} – ${arvStats.high?.toLocaleString() || "?"}
+                        ${arvStats.low?.toLocaleString() || "?"} â ${arvStats.high?.toLocaleString() || "?"}
                       </p>
                     </div>
                     <div>
