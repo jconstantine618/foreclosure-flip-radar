@@ -8,6 +8,10 @@ import type {
 } from "@/types";
 import type { PropertyProvider, ComparableSale } from "../interfaces";
 import { BatchDataClient, type BatchDataProperty } from "./client";
+import {
+  lookupParcelByCoords,
+  queryParcelsInArea,
+} from "../county/horry-arcgis";
 
 // ---------------------------------------------------------------------------
 // BatchDataPropertyProvider
@@ -86,8 +90,14 @@ export class BatchDataPropertyProvider implements PropertyProvider {
   // -------------------------------------------------------------------------
 
   /**
-   * Fetch comparable recently-sold properties for a given address.
-   * Each comp costs one API call ($0.01).
+   * Fetch comparable recently-sold properties using a two-source approach:
+   *
+   * 1. BatchData compAddress search â nearby property addresses + lat/lon
+   * 2. Horry County ArcGIS spatial query â market values, sale dates
+   *
+   * BatchData's compAddress search only returns basic info (_id, address,
+   * ids, owner) on the current plan. County public records fill in the
+   * valuation data for free via their ArcGIS REST API.
    */
   async getComparables(params: {
     street: string;
@@ -99,32 +109,93 @@ export class BatchDataPropertyProvider implements PropertyProvider {
   }): Promise<{ comps: ComparableSale[]; totalFound: number }> {
     const response = await this.client.getComps(params);
 
-    const comps: ComparableSale[] = response.results.properties.map((p) => {
-      const r = p as Record<string, any>;
-      const salePrice = r.sale?.lastSale?.price ?? r.valuation?.lastSalePrice ?? 0;
-      const sqft = r.building?.livingAreaSquareFeet ?? r.property?.sqft ?? null;
+    console.log(
+      `[Comps] BatchData returned ${response.results.properties.length} nearby properties (total: ${response.results.total})`,
+    );
 
-      return {
-        address: r.address?.street ?? "",
-        city: r.address?.city ?? "",
-        state: r.address?.state ?? "",
-        zipCode: r.address?.zip ?? "",
-        salePrice,
-        saleDate: r.sale?.lastSale?.saleDate ?? null,
-        sqft,
-        bedrooms: r.building?.bedroomCount ?? r.property?.bedrooms ?? null,
-        bathrooms: r.building?.bathroomCount ?? r.property?.bathrooms ?? null,
-        yearBuilt: r.building?.yearBuilt ?? null,
-        lotSizeSqft: r.lot?.lotSizeSquareFeet ?? null,
-        distanceMiles: r.distance?.miles ?? null,
-        pricePerSqft: salePrice && sqft ? Math.round(salePrice / sqft) : null,
-        externalId: r._id ?? r.id ?? null,
-        rawData: r,
-      };
-    });
+    // Enrich each property with county data using lat/lon from BatchData
+    const enrichedComps = await Promise.allSettled(
+      response.results.properties.map(async (p) => {
+        const r = p as Record<string, any>;
+        const lat = r.address?.latitude;
+        const lon = r.address?.longitude;
+        const address = r.address?.street ?? r.address?.line1 ?? "";
 
-    // Filter to only properties with actual sale data
+        // Try BatchData fields first (higher-tier plans include this data)
+        let salePrice =
+          r.sale?.lastSale?.salePrice ??
+          r.sale?.lastSale?.price ??
+          r.sale?.saleTransAmount ??
+          r.valuation?.lastSalePrice ??
+          0;
+        let saleDate =
+          r.sale?.lastSale?.saleDate ??
+          r.sale?.lastSale?.recordingDate ??
+          null;
+        let sqft =
+          r.building?.livingAreaSquareFeet ??
+          r.building?.squareFeet ??
+          r.property?.sqft ??
+          null;
+
+        // If BatchData didn't provide sale price, enrich from county records
+        let countyData = null;
+        if (salePrice === 0 && lat && lon) {
+          countyData = await lookupParcelByCoords(lat, lon);
+          if (countyData?.marketProp && countyData.marketProp > 0) {
+            salePrice = countyData.marketProp;
+            saleDate = countyData.saleDate
+              ? countyData.saleDate.toISOString()
+              : saleDate;
+          }
+        }
+
+        return {
+          address,
+          city: r.address?.city ?? "",
+          state: r.address?.state ?? "",
+          zipCode: r.address?.zip ?? r.address?.zipCode ?? "",
+          salePrice,
+          saleDate,
+          sqft,
+          bedrooms:
+            r.building?.bedroomCount ??
+            r.building?.bedrooms ??
+            r.property?.bedrooms ??
+            null,
+          bathrooms:
+            r.building?.bathroomCount ??
+            r.building?.bathrooms ??
+            r.property?.bathrooms ??
+            null,
+          yearBuilt: r.building?.yearBuilt ?? null,
+          lotSizeSqft: r.lot?.lotSizeSquareFeet ?? r.lot?.lotSize ?? null,
+          distanceMiles: r.distance?.miles ?? r.distance ?? null,
+          pricePerSqft:
+            salePrice && sqft ? Math.round(salePrice / sqft) : null,
+          externalId: r._id ?? r.id ?? null,
+          rawData: {
+            batchdata: r,
+            county: countyData,
+          },
+        } as ComparableSale;
+      }),
+    );
+
+    // Collect successful enrichments
+    const comps: ComparableSale[] = enrichedComps
+      .filter(
+        (result): result is PromiseFulfilledResult<ComparableSale> =>
+          result.status === "fulfilled",
+      )
+      .map((result) => result.value);
+
+    // Filter to only properties with a value > 0
     const validComps = comps.filter((c) => c.salePrice > 0);
+
+    console.log(
+      `[Comps] After county enrichment: ${validComps.length} comps with values (out of ${comps.length} total)`,
+    );
 
     return { comps: validComps, totalFound: response.results.total };
   }
@@ -139,7 +210,7 @@ export class BatchDataPropertyProvider implements PropertyProvider {
     // foreclosure.* for distress info, ids.apn for parcel number, etc.
     const r = raw as Record<string, any>;
 
-    // Resolve mailing address – may be an object or a string
+    // Resolve mailing address â may be an object or a string
     let ownerMailingAddr: string | null = null;
     if (r.owner?.mailingAddress) {
       if (typeof r.owner.mailingAddress === "string") {
