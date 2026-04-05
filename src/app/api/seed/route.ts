@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-// One-time seed endpoint — run once to populate the database, then remove
+// One-time seed endpoint â run once to populate the database, then remove
 export async function POST(request: Request) {
   const authHeader = request.headers.get("x-seed-key");
   if (authHeader !== process.env.SEED_SECRET && authHeader !== "forecloser-seed-2026") {
@@ -89,8 +89,8 @@ export async function POST(request: Request) {
         data: {
           propertyId: property.id,
           flipScore: opp.flipScore,
-          distressStage: opp.distressStage,
-          pipelineStage: opp.pipelineStage,
+          distressStage: opp.distressStage as any,
+          pipelineStage: opp.pipelineStage as any,
           estimatedARV: opp.estimatedARV,
           estimatedRehabCost: opp.estimatedRehabCost,
           auctionDate: opp.auctionDate ? new Date(opp.auctionDate) : null,
