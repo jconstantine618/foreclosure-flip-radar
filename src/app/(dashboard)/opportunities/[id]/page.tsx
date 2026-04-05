@@ -131,23 +131,6 @@ export default function OpportunityDetailPage() {
   ]);
 
   // Fetch opportunity data
-  useEffect(() stimate, setRehabEstimate] = useState(0);
-  const [newNote, setNewNote] = useState("");
-  const [notes, setNotes] = useState<any[]>([]);
-  const [tags, setTags] = useState<string[]>([]);
-  const [newTag, setNewTag] = useState("");
-  const [checklist, setChecklist] = useState([
-    { label: "Research title", checked: false },
-    { label: "Drive by property", checked: false },
-    { label: "Check flood zone", checked: false },
-    { label: "Verify rehab estimate", checked: false },
-    { label: "Confirm funding", checked: false },
-    { label: "Review county bid procedures", checked: false },
-    { label: "Set max bid", checked: false },
-    { label: "Register for auction", checked: false },
-  ]);
-
-  // Fetch opportunity data
   useEffect(() => {
     const fetchOpportunity = async () => {
       try {
