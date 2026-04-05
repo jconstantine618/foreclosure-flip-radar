@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -63,19 +63,22 @@ interface Auction {
   score: number;
 }
 
-// ---------- mock data ----------
-const MOCK_AUCTIONS: Auction[] = [
-  { id: "a1", date: "2026-04-02", time: "10:00 AM", address: "104 Maple Creek Dr", city: "Greenville", county: "Greenville", type: "MIE", minBid: 185000, deposit: 5000, status: "Confirmed", score: 88 },
-  { id: "a2", date: "2026-04-03", time: "11:00 AM", address: "2215 Pelham Rd", city: "Greenville", county: "Greenville", type: "Upset", minBid: 142000, deposit: 5000, status: "Confirmed", score: 82 },
-  { id: "a3", date: "2026-04-06", time: "10:30 AM", address: "503 Ocean Blvd", city: "Myrtle Beach", county: "Horry", type: "MIE", minBid: 168000, deposit: 5000, status: "Scheduled", score: 76 },
-  { id: "a4", date: "2026-04-08", time: "2:00 PM", address: "7801 Kings Hwy", city: "Myrtle Beach", county: "Horry", type: "Tax", minBid: 32000, deposit: 2000, status: "Confirmed", score: 69 },
-  { id: "a5", date: "2026-04-10", time: "10:00 AM", address: "628 Laurens Rd", city: "Greenville", county: "Greenville", type: "MIE", minBid: 155000, deposit: 5000, status: "Scheduled", score: 80 },
-  { id: "a6", date: "2026-04-14", time: "11:00 AM", address: "1500 Hwy 17 S", city: "Surfside Beach", county: "Horry", type: "Upset", minBid: 125000, deposit: 5000, status: "Pending", score: 58 },
-  { id: "a7", date: "2026-04-18", time: "10:00 AM", address: "334 N Main St", city: "Mauldin", county: "Greenville", type: "MIE", minBid: 275000, deposit: 10000, status: "Confirmed", score: 74 },
-  { id: "a8", date: "2026-04-22", time: "2:30 PM", address: "212 Augusta St", city: "Greenville", county: "Greenville", type: "MIE", minBid: 225000, deposit: 10000, status: "Confirmed", score: 95 },
-  { id: "a9", date: "2026-04-28", time: "10:00 AM", address: "910 Sea Mountain Hwy", city: "North Myrtle Beach", county: "Horry", type: "Tax", minBid: 18500, deposit: 1000, status: "Scheduled", score: 63 },
-  { id: "a10", date: "2026-04-30", time: "11:00 AM", address: "4420 Clemson Blvd", city: "Anderson", county: "Greenville", type: "Upset", minBid: 112000, deposit: 5000, status: "Postponed", score: 78 },
-];
+// ---------- API response types ----------
+interface Opportunity {
+  id: string;
+  flipScore: number;
+  distressStage: "AUCTION" | "TAX_LIEN" | "LIS_PENDENS" | string;
+  pipelineStage: "NEW" | "REVIEWING" | "BID_READY" | "UNDERWRITING" | "PASSED" | string;
+  auctionDate: string | null;
+  createdAt: string;
+  property: {
+    streetAddress: string;
+    city: string;
+    county: string;
+    estimatedValue: number;
+  };
+  maxAllowableOffer?: number;
+}
 
 const TYPE_VARIANTS: Record<AuctionType, "destructive" | "warning" | "info"> = {
   MIE: "destructive",
@@ -107,6 +110,42 @@ function rowUrgencyClass(dateStr: string): string {
   return "";
 }
 
+function mapOpportunityToAuction(opp: Opportunity): Auction | null {
+  if (!opp.auctionDate) return null;
+
+  const distressTypeMap: Record<string, AuctionType> = {
+    AUCTION: "MIE",
+    TAX_LIEN: "Tax",
+    LIS_PENDENS: "Upset",
+  };
+
+  const pipelineStatusMap: Record<string, AuctionStatus> = {
+    BID_READY: "Confirmed",
+    UNDERWRITING: "Pending",
+    NEW: "Scheduled",
+    REVIEWING: "Scheduled",
+    PASSED: "Postponed",
+  };
+
+  const minBid = opp.maxAllowableOffer || Math.round(opp.property.estimatedValue * 0.5);
+  const type = distressTypeMap[opp.distressStage] || "MIE";
+  const status = pipelineStatusMap[opp.pipelineStage] || "Scheduled";
+
+  return {
+    id: opp.id,
+    date: opp.auctionDate.split("T")[0],
+    time: "TBD",
+    address: opp.property.streetAddress,
+    city: opp.property.city,
+    county: opp.property.county,
+    type,
+    minBid,
+    deposit: Math.round(minBid * 0.05),
+    status,
+    score: opp.flipScore,
+  };
+}
+
 export default function AuctionsPage() {
   const [county, setCounty] = useState("ALL");
   const [dateRange, setDateRange] = useState<DateRange>("all");
@@ -115,8 +154,35 @@ export default function AuctionsPage() {
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
+  const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchAuctions = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/api/opportunities?limit=100&sort=auctionDate&order=asc");
+        if (!response.ok) throw new Error("Failed to fetch opportunities");
+        const data = await response.json();
+        const opportunities = Array.isArray(data) ? data : data.data || [];
+        const mapped = opportunities
+          .map(mapOpportunityToAuction)
+          .filter((a): a is Auction => a !== null);
+        setAuctions(mapped);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+        setAuctions([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAuctions();
+  }, []);
+
   const filtered = useMemo(() => {
-    return MOCK_AUCTIONS.filter((a) => {
+    return auctions.filter((a) => {
       if (county !== "ALL" && a.county !== county) return false;
       if (auctionType !== "ALL" && a.type !== auctionType) return false;
       if (dateRange !== "all") {
@@ -127,7 +193,7 @@ export default function AuctionsPage() {
       }
       return true;
     });
-  }, [county, dateRange, auctionType]);
+  }, [county, dateRange, auctionType, auctions]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -247,12 +313,23 @@ export default function AuctionsPage() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("date")}>
-                  <span className="inline-flex items-center">Date <SortIcon col="date" /></span>
-                </TableHead>
+          {loading && (
+            <div className="py-8 text-center text-muted-foreground">
+              Loading auctions...
+            </div>
+          )}
+          {error && (
+            <div className="py-8 text-center text-red-600">
+              Error loading auctions: {error}
+            </div>
+          )}
+          {!loading && !error && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("date")}>
+                    <span className="inline-flex items-center">Date <SortIcon col="date" /></span>
+                  </TableHead>
                 <TableHead>Time</TableHead>
                 <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("address")}>
                   <span className="inline-flex items-center">Address <SortIcon col="address" /></span>
@@ -329,14 +406,15 @@ export default function AuctionsPage() {
                   );
                 })
               )}
-            </TableBody>
-          </Table>
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
       {/* Summary */}
       <div className="text-sm text-muted-foreground">
-        Showing {sorted.length} of {MOCK_AUCTIONS.length} auctions
+        Showing {sorted.length} of {auctions.length} auctions
       </div>
     </div>
   );
