@@ -5,7 +5,7 @@ import { initializeProviders, providerRegistry } from "@/lib/providers";
 import { BatchDataPropertyProvider } from "@/lib/providers/batchdata/provider";
 
 // ---------------------------------------------------------------------------
-// GET /api/properties/[id]/comps – Fetch comparable sales on demand
+// GET /api/properties/[id]/comps â Fetch comparable sales on demand
 // ---------------------------------------------------------------------------
 
 export async function GET(
@@ -97,7 +97,7 @@ export async function GET(
           lotSizeSqft: c.lotSizeSqft ?? null,
           distanceMiles: c.distanceMiles ?? null,
           pricePerSqft: c.pricePerSqft ?? null,
-          provider: "batchdata",
+          provider: c.rawData?.county ? "batchdata+county" : "batchdata",
           externalId: c.externalId ?? null,
           rawData: c.rawData ?? null,
         })),
