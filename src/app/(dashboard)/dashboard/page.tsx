@@ -57,8 +57,8 @@ export default function DashboardPage() {
       <StatsCards stats={stats} />
       <div className="grid gap-6 md:grid-cols-2">
         <PipelineSummary pipeline={data?.pipeline ?? null} />
-        <RecentOpportunities />
       </div>
+      <RecentOpportunities />
     </div>
   );
 }
