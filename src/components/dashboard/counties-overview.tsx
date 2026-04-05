@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +13,6 @@ import {
 import { ArrowRight, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// TODO: Replace with real data from API/database
 interface CountyHealth {
   name: string;
   activeOpportunities: number;
@@ -20,26 +20,13 @@ interface CountyHealth {
   adapterHealthy: boolean;
 }
 
-const MOCK_COUNTIES: CountyHealth[] = [
-  {
-    name: "Greenville",
-    activeOpportunities: 34,
-    lastSyncTime: "2026-04-01T08:15:00Z",
-    adapterHealthy: true,
-  },
-  {
-    name: "Horry",
-    activeOpportunities: 47,
-    lastSyncTime: "2026-04-01T07:45:00Z",
-    adapterHealthy: true,
-  },
-  {
-    name: "Georgetown",
-    activeOpportunities: 18,
-    lastSyncTime: "2026-03-31T22:30:00Z",
-    adapterHealthy: false,
-  },
-];
+interface Opportunity {
+  id: string;
+  property: {
+    county: string;
+  };
+  updatedAt: string;
+}
 
 function formatRelativeTime(dateStr: string): string {
   const now = new Date();
@@ -54,6 +41,57 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 export function CountiesOverview() {
+  const [counties, setCounties] = useState<CountyHealth[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchCounties = async () => {
+      try {
+        const response = await fetch("/api/opportunities?limit=100");
+        if (!response.ok) throw new Error("Failed to fetch opportunities");
+
+        const data = await response.json();
+        const opportunities = data.data || [];
+
+        // Group by county
+        const countyMap = new Map<string, { count: number; latestDate: string }>();
+
+        opportunities.forEach((opp: Opportunity) => {
+          const county = opp.property.county;
+          if (!county) return;
+
+          const existing = countyMap.get(county) || { count: 0, latestDate: "" };
+          existing.count++;
+
+          // Keep the most recent updatedAt
+          if (!existing.latestDate || new Date(opp.updatedAt) > new Date(existing.latestDate)) {
+            existing.latestDate = opp.updatedAt;
+          }
+
+          countyMap.set(county, existing);
+        });
+
+        // Convert to CountyHealth array
+        const countyArray = Array.from(countyMap.entries()).map(([name, data]) => ({
+          name,
+          activeOpportunities: data.count,
+          lastSyncTime: data.latestDate,
+          adapterHealthy: true,
+        }));
+
+        setCounties(countyArray);
+      } catch (error) {
+        console.error("Error fetching counties:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCounties();
+  }, []);
+
+  const displayCounties = counties.length > 0 ? counties : [];
+
   return (
     <Card>
       <CardHeader>
@@ -64,7 +102,12 @@ export function CountiesOverview() {
       </CardHeader>
       <CardContent>
         <ul className="space-y-3">
-          {MOCK_COUNTIES.map((county) => (
+          {loading ? (
+            <li className="text-sm text-muted-foreground">Loading counties...</li>
+          ) : displayCounties.length === 0 ? (
+            <li className="text-sm text-muted-foreground">No opportunities found</li>
+          ) : (
+            displayCounties.map((county) => (
             <li
               key={county.name}
               className="flex items-center justify-between rounded-lg border p-3"
@@ -95,7 +138,8 @@ export function CountiesOverview() {
                 </span>
               </div>
             </li>
-          ))}
+            ))
+          )}
         </ul>
       </CardContent>
       <CardFooter>
