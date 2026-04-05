@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,7 @@ import {
 import { ArrowRight, Calendar, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// TODO: Replace with real data from API/database
-interface MockAuction {
+interface Auction {
   id: string;
   date: string;
   address: string;
@@ -22,43 +22,16 @@ interface MockAuction {
   minimumBid: number | null;
 }
 
-const MOCK_AUCTIONS: MockAuction[] = [
-  {
-    id: "a1",
-    date: "2026-04-03",
-    address: "6100 N Ocean Blvd, Myrtle Beach, SC 29572",
-    county: "Horry",
-    minimumBid: 185000,
-  },
-  {
-    id: "a2",
-    date: "2026-04-07",
-    address: "3201 N Kings Hwy, Myrtle Beach, SC 29577",
-    county: "Horry",
-    minimumBid: 125000,
-  },
-  {
-    id: "a3",
-    date: "2026-04-14",
-    address: "142 Pelham Rd, Greenville, SC 29615",
-    county: "Greenville",
-    minimumBid: null,
-  },
-  {
-    id: "a4",
-    date: "2026-04-18",
-    address: "710 Pawleys Island Rd, Pawleys Island, SC 29585",
-    county: "Georgetown",
-    minimumBid: 210000,
-  },
-  {
-    id: "a5",
-    date: "2026-04-21",
-    address: "1450 Highway 17 S, Surfside Beach, SC 29575",
-    county: "Horry",
-    minimumBid: 95000,
-  },
-];
+interface Opportunity {
+  id: string;
+  auctionDate: string | null;
+  maxAllowableOffer: number | null;
+  estimatedARV: number | null;
+  property: {
+    streetAddress: string;
+    county: string;
+  };
+}
 
 function getDaysUntil(dateStr: string): number {
   const now = new Date();
@@ -83,10 +56,43 @@ function formatCurrency(value: number): string {
 }
 
 export function AuctionCalendar() {
-  // TODO: Fetch real auctions sorted by date asc, limited to 5
-  const auctions = [...MOCK_AUCTIONS].sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-  );
+  const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchAuctions = async () => {
+      try {
+        const response = await fetch(
+          "/api/opportunities?limit=100&sort=auctionDate&order=asc"
+        );
+        if (!response.ok) throw new Error("Failed to fetch opportunities");
+
+        const data = await response.json();
+        const opportunities = data.data || [];
+
+        // Filter to only opportunities with auctionDate
+        const auctionList = opportunities
+          .filter((opp: Opportunity) => opp.auctionDate)
+          .map((opp: Opportunity) => ({
+            id: opp.id,
+            date: opp.auctionDate!,
+            address: opp.property.streetAddress,
+            county: opp.property.county,
+            minimumBid:
+              opp.maxAllowableOffer ||
+              (opp.estimatedARV ? opp.estimatedARV * 0.5 : null),
+          }));
+
+        setAuctions(auctionList);
+      } catch (error) {
+        console.error("Error fetching auctions:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAuctions();
+  }, []);
 
   return (
     <Card>
@@ -98,7 +104,12 @@ export function AuctionCalendar() {
       </CardHeader>
       <CardContent>
         <ul className="space-y-3">
-          {auctions.map((auction) => {
+          {loading ? (
+            <li className="text-sm text-muted-foreground">Loading auctions...</li>
+          ) : auctions.length === 0 ? (
+            <li className="text-sm text-muted-foreground">No upcoming auctions</li>
+          ) : (
+            auctions.map((auction) => {
             const daysUntil = getDaysUntil(auction.date);
             return (
               <li
@@ -139,7 +150,8 @@ export function AuctionCalendar() {
                 </div>
               </li>
             );
-          })}
+            })
+          )}
         </ul>
       </CardContent>
       <CardFooter>
