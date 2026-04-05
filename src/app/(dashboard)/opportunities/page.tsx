@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -40,95 +40,117 @@ function fmt(n: number) {
 }
 
 // ---------- types ----------
-type Stage =
+type DistressStage =
   | "PRE_FORECLOSURE"
   | "AUCTION"
   | "REO"
+  | "TAX_LIEN"
+  | "LIS_PENDENS"
   | "BANK_OWNED"
-  | "SHORT_SALE";
+  | "OTHER";
 
-type Pipeline =
+type PipelineStage =
   | "NEW"
-  | "RESEARCHING"
+  | "REVIEWING"
+  | "DRIVE_BY"
+  | "UNDERWRITING"
   | "BID_READY"
-  | "BID_SUBMITTED"
+  | "PASSED"
   | "WON"
-  | "LOST"
-  | "CLOSED";
+  | "DISPOSITION";
 
 type PropertyType =
-  | "Single Family"
-  | "Townhouse"
-  | "Condo"
-  | "Multi-Family"
-  | "Vacant Land";
+  | "SINGLE_FAMILY"
+  | "TOWNHOUSE"
+  | "CONDO"
+  | "DUPLEX"
+  | "MULTI_FAMILY"
+  | "OTHER";
+
+interface Property {
+  id: string;
+  streetAddress: string;
+  city: string;
+  county: string;
+  state: string;
+  zipCode: string;
+  propertyType: PropertyType;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  sqft: number | null;
+  yearBuilt: number | null;
+  estimatedValue: number;
+  equityEstimate: number;
+  ownerName: string | null;
+}
 
 interface Opportunity {
   id: string;
-  address: string;
-  city: string;
-  county: string;
-  type: PropertyType;
-  score: number;
-  stage: Stage;
-  pipeline: Pipeline;
-  estimatedValue: number;
-  equityPercent: number;
+  propertyId: string;
+  flipScore: number;
+  distressStage: DistressStage;
+  pipelineStage: PipelineStage;
+  estimatedARV: number;
+  estimatedRehabCost: number;
+  maxAllowableOffer: number;
   auctionDate: string | null;
-  hasCountyNotice: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  property: Property;
 }
 
-// ---------- mock data ----------
-const MOCK_DATA: Opportunity[] = [
-  { id: "1", address: "104 Maple Creek Dr", city: "Greenville", county: "Greenville", type: "Single Family", score: 88, stage: "AUCTION", pipeline: "BID_READY", estimatedValue: 285000, equityPercent: 42, auctionDate: "2026-04-28", hasCountyNotice: true },
-  { id: "2", address: "2215 Pelham Rd", city: "Greenville", county: "Greenville", type: "Single Family", score: 82, stage: "PRE_FORECLOSURE", pipeline: "RESEARCHING", estimatedValue: 195000, equityPercent: 31, auctionDate: null, hasCountyNotice: true },
-  { id: "3", address: "503 Ocean Blvd", city: "Myrtle Beach", county: "Horry", type: "Condo", score: 76, stage: "AUCTION", pipeline: "NEW", estimatedValue: 224000, equityPercent: 28, auctionDate: "2026-05-05", hasCountyNotice: false },
-  { id: "4", address: "1742 Woodruff Rd", city: "Simpsonville", county: "Greenville", type: "Townhouse", score: 91, stage: "PRE_FORECLOSURE", pipeline: "BID_READY", estimatedValue: 310000, equityPercent: 55, auctionDate: null, hasCountyNotice: true },
-  { id: "5", address: "89 Church St", city: "Georgetown", county: "Georgetown", type: "Single Family", score: 67, stage: "REO", pipeline: "RESEARCHING", estimatedValue: 148000, equityPercent: 100, auctionDate: null, hasCountyNotice: false },
-  { id: "6", address: "334 N Main St", city: "Mauldin", county: "Greenville", type: "Multi-Family", score: 74, stage: "AUCTION", pipeline: "NEW", estimatedValue: 415000, equityPercent: 38, auctionDate: "2026-05-12", hasCountyNotice: true },
-  { id: "7", address: "7801 Kings Hwy", city: "Myrtle Beach", county: "Horry", type: "Single Family", score: 69, stage: "SHORT_SALE", pipeline: "RESEARCHING", estimatedValue: 175000, equityPercent: 15, auctionDate: null, hasCountyNotice: false },
-  { id: "8", address: "212 Augusta St", city: "Greenville", county: "Greenville", type: "Single Family", score: 95, stage: "AUCTION", pipeline: "BID_SUBMITTED", estimatedValue: 345000, equityPercent: 48, auctionDate: "2026-04-22", hasCountyNotice: true },
-  { id: "9", address: "1500 Hwy 17 S", city: "Surfside Beach", county: "Horry", type: "Condo", score: 58, stage: "BANK_OWNED", pipeline: "NEW", estimatedValue: 199000, equityPercent: 100, auctionDate: null, hasCountyNotice: false },
-  { id: "10", address: "45 Front St", city: "Georgetown", county: "Georgetown", type: "Single Family", score: 72, stage: "PRE_FORECLOSURE", pipeline: "RESEARCHING", estimatedValue: 162000, equityPercent: 22, auctionDate: null, hasCountyNotice: true },
-  { id: "11", address: "628 Laurens Rd", city: "Greenville", county: "Greenville", type: "Single Family", score: 80, stage: "AUCTION", pipeline: "BID_READY", estimatedValue: 238000, equityPercent: 36, auctionDate: "2026-05-19", hasCountyNotice: true },
-  { id: "12", address: "910 Sea Mountain Hwy", city: "North Myrtle Beach", county: "Horry", type: "Townhouse", score: 63, stage: "REO", pipeline: "NEW", estimatedValue: 265000, equityPercent: 100, auctionDate: null, hasCountyNotice: false },
-  { id: "13", address: "77 Poinsett Hwy", city: "Travelers Rest", county: "Greenville", type: "Single Family", score: 85, stage: "PRE_FORECLOSURE", pipeline: "RESEARCHING", estimatedValue: 210000, equityPercent: 40, auctionDate: null, hasCountyNotice: true },
-  { id: "14", address: "1205 Fraser St", city: "Georgetown", county: "Georgetown", type: "Vacant Land", score: 51, stage: "AUCTION", pipeline: "NEW", estimatedValue: 55000, equityPercent: 100, auctionDate: "2026-05-26", hasCountyNotice: true },
-  { id: "15", address: "4420 Clemson Blvd", city: "Anderson", county: "Greenville", type: "Single Family", score: 78, stage: "AUCTION", pipeline: "RESEARCHING", estimatedValue: 189000, equityPercent: 33, auctionDate: "2026-04-30", hasCountyNotice: true },
-  { id: "16", address: "200 E North St", city: "Greenville", county: "Greenville", type: "Multi-Family", score: 87, stage: "PRE_FORECLOSURE", pipeline: "BID_READY", estimatedValue: 520000, equityPercent: 45, auctionDate: null, hasCountyNotice: true },
-  { id: "17", address: "315 3rd Ave S", city: "Myrtle Beach", county: "Horry", type: "Condo", score: 62, stage: "SHORT_SALE", pipeline: "NEW", estimatedValue: 142000, equityPercent: 12, auctionDate: null, hasCountyNotice: false },
-  { id: "18", address: "88 Verdae Blvd", city: "Greenville", county: "Greenville", type: "Townhouse", score: 73, stage: "AUCTION", pipeline: "RESEARCHING", estimatedValue: 275000, equityPercent: 29, auctionDate: "2026-06-02", hasCountyNotice: true },
-];
+interface ApiResponse {
+  data: Opportunity[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
 
-const STAGE_LABELS: Record<Stage, string> = {
+const DISTRESS_STAGE_LABELS: Record<DistressStage, string> = {
   PRE_FORECLOSURE: "Pre-Foreclosure",
   AUCTION: "Auction",
   REO: "REO",
+  TAX_LIEN: "Tax Lien",
+  LIS_PENDENS: "Lis Pendens",
   BANK_OWNED: "Bank Owned",
-  SHORT_SALE: "Short Sale",
+  OTHER: "Other",
 };
 
-const STAGE_VARIANTS: Record<Stage, "default" | "warning" | "destructive" | "info" | "success" | "secondary"> = {
+const DISTRESS_STAGE_VARIANTS: Record<DistressStage, "default" | "warning" | "destructive" | "info" | "success" | "secondary"> = {
   PRE_FORECLOSURE: "warning",
   AUCTION: "destructive",
   REO: "info",
+  TAX_LIEN: "secondary",
+  LIS_PENDENS: "warning",
   BANK_OWNED: "secondary",
-  SHORT_SALE: "success",
+  OTHER: "default",
 };
 
-const PIPELINE_LABELS: Record<Pipeline, string> = {
+const PIPELINE_LABELS: Record<PipelineStage, string> = {
   NEW: "New",
-  RESEARCHING: "Researching",
+  REVIEWING: "Reviewing",
+  DRIVE_BY: "Drive By",
+  UNDERWRITING: "Underwriting",
   BID_READY: "Bid Ready",
-  BID_SUBMITTED: "Bid Submitted",
+  PASSED: "Passed",
   WON: "Won",
-  LOST: "Lost",
-  CLOSED: "Closed",
+  DISPOSITION: "Disposition",
 };
 
-const PAGE_SIZE = 8;
+const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
+  SINGLE_FAMILY: "Single Family",
+  TOWNHOUSE: "Townhouse",
+  CONDO: "Condo",
+  DUPLEX: "Duplex",
+  MULTI_FAMILY: "Multi-Family",
+  OTHER: "Other",
+};
 
-type SortKey = keyof Pick<Opportunity, "address" | "county" | "type" | "score" | "stage" | "pipeline" | "estimatedValue" | "equityPercent" | "auctionDate">;
+const PAGE_SIZE = 25; // match API default limit
+
+type SortKey = "flipScore" | "estimatedARV" | "property.streetAddress" | "property.county" | "property.propertyType" | "auctionDate";
 
 function scoreColor(score: number) {
   if (score >= 80) return "text-green-600";
@@ -155,16 +177,73 @@ export default function OpportunitiesPage() {
     search: "",
   });
 
+  // data and loading state
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+
   // sort
-  const [sortKey, setSortKey] = useState<SortKey>("score");
+  const [sortKey, setSortKey] = useState<SortKey>("flipScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // pagination
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
+
+  // fetch data from API
+  useEffect(() => {
+    const fetchOpportunities = async () => {
+      setIsLoading(true);
+      try {
+        const params = new URLSearchParams();
+
+        if (appliedFilters.county !== "ALL") {
+          params.append("county", appliedFilters.county);
+        }
+        if (appliedFilters.stage !== "ALL") {
+          params.append("stage", appliedFilters.stage);
+        }
+        if (appliedFilters.minScore) {
+          params.append("minScore", appliedFilters.minScore);
+        }
+        if (appliedFilters.propertyType !== "ALL") {
+          params.append("propertyType", appliedFilters.propertyType);
+        }
+        if (appliedFilters.hasNotice) {
+          params.append("hasNotice", "true");
+        }
+
+        // Map sort key to API field names
+        let sortField = "flipScore";
+        if (sortKey === "property.streetAddress") sortField = "address";
+        if (sortKey === "property.county") sortField = "county";
+        if (sortKey === "property.propertyType") sortField = "propertyType";
+        if (sortKey === "estimatedARV") sortField = "estimatedARV";
+        if (sortKey === "auctionDate") sortField = "auctionDate";
+
+        params.append("sort", sortField);
+        params.append("order", sortDir);
+        params.append("page", String(page));
+        params.append("limit", String(PAGE_SIZE));
+
+        const response = await fetch(`/api/opportunities?${params.toString()}`);
+        const data: ApiResponse = await response.json();
+
+        setOpportunities(data.data);
+        setTotalCount(data.total);
+      } catch (error) {
+        console.error("Failed to fetch opportunities:", error);
+        setOpportunities([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchOpportunities();
+  }, [appliedFilters, sortKey, sortDir, page]);
 
   function applyFilters() {
     setAppliedFilters({ county, stage, minScore, propertyType, hasNotice, search });
-    setPage(0);
+    setPage(1);
   }
 
   function resetFilters() {
@@ -175,40 +254,10 @@ export default function OpportunitiesPage() {
     setHasNotice(false);
     setSearch("");
     setAppliedFilters({ county: "ALL", stage: "ALL", minScore: "", propertyType: "ALL", hasNotice: false, search: "" });
-    setPage(0);
+    setPage(1);
   }
 
-  const filtered = useMemo(() => {
-    const f = appliedFilters;
-    return MOCK_DATA.filter((o) => {
-      if (f.county !== "ALL" && o.county !== f.county) return false;
-      if (f.stage !== "ALL" && o.stage !== f.stage) return false;
-      if (f.minScore && o.score < Number(f.minScore)) return false;
-      if (f.propertyType !== "ALL" && o.type !== f.propertyType) return false;
-      if (f.hasNotice && !o.hasCountyNotice) return false;
-      if (f.search && !o.address.toLowerCase().includes(f.search.toLowerCase())) return false;
-      return true;
-    });
-  }, [appliedFilters]);
-
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    arr.sort((a, b) => {
-      const aVal = a[sortKey];
-      const bVal = b[sortKey];
-      if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return 1;
-      if (bVal == null) return -1;
-      if (typeof aVal === "number" && typeof bVal === "number") return sortDir === "asc" ? aVal - bVal : bVal - aVal;
-      const aStr = String(aVal);
-      const bStr = String(bVal);
-      return sortDir === "asc" ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr);
-    });
-    return arr;
-  }, [filtered, sortKey, sortDir]);
-
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
-  const paged = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -269,8 +318,10 @@ export default function OpportunitiesPage() {
                   <SelectItem value="PRE_FORECLOSURE">Pre-Foreclosure</SelectItem>
                   <SelectItem value="AUCTION">Auction</SelectItem>
                   <SelectItem value="REO">REO</SelectItem>
+                  <SelectItem value="TAX_LIEN">Tax Lien</SelectItem>
+                  <SelectItem value="LIS_PENDENS">Lis Pendens</SelectItem>
                   <SelectItem value="BANK_OWNED">Bank Owned</SelectItem>
-                  <SelectItem value="SHORT_SALE">Short Sale</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -296,11 +347,12 @@ export default function OpportunitiesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Types</SelectItem>
-                  <SelectItem value="Single Family">Single Family</SelectItem>
-                  <SelectItem value="Townhouse">Townhouse</SelectItem>
-                  <SelectItem value="Condo">Condo</SelectItem>
-                  <SelectItem value="Multi-Family">Multi-Family</SelectItem>
-                  <SelectItem value="Vacant Land">Vacant Land</SelectItem>
+                  <SelectItem value="SINGLE_FAMILY">Single Family</SelectItem>
+                  <SelectItem value="TOWNHOUSE">Townhouse</SelectItem>
+                  <SelectItem value="CONDO">Condo</SelectItem>
+                  <SelectItem value="DUPLEX">Duplex</SelectItem>
+                  <SelectItem value="MULTI_FAMILY">Multi-Family</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -348,97 +400,103 @@ export default function OpportunitiesPage() {
       {/* ---- results table ---- */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("address")}>
-                  <span className="inline-flex items-center">Address <SortIcon col="address" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("county")}>
-                  <span className="inline-flex items-center">County <SortIcon col="county" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("type")}>
-                  <span className="inline-flex items-center">Type <SortIcon col="type" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("score")}>
-                  <span className="inline-flex items-center">Score <SortIcon col="score" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("stage")}>
-                  <span className="inline-flex items-center">Stage <SortIcon col="stage" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("pipeline")}>
-                  <span className="inline-flex items-center">Pipeline <SortIcon col="pipeline" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort("estimatedValue")}>
-                  <span className="inline-flex items-center justify-end">Est. Value <SortIcon col="estimatedValue" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort("equityPercent")}>
-                  <span className="inline-flex items-center justify-end">Equity% <SortIcon col="equityPercent" /></span>
-                </TableHead>
-                <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("auctionDate")}>
-                  <span className="inline-flex items-center">Auction Date <SortIcon col="auctionDate" /></span>
-                </TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paged.length === 0 ? (
+          {isLoading ? (
+            <div className="py-8 text-center text-muted-foreground">
+              Loading opportunities...
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
-                    No opportunities match the current filters.
-                  </TableCell>
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("property.streetAddress")}>
+                    <span className="inline-flex items-center">Address <SortIcon col="property.streetAddress" /></span>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("property.county")}>
+                    <span className="inline-flex items-center">County <SortIcon col="property.county" /></span>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("property.propertyType")}>
+                    <span className="inline-flex items-center">Type <SortIcon col="property.propertyType" /></span>
+                  </TableHead>
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("flipScore")}>
+                    <span className="inline-flex items-center">Score <SortIcon col="flipScore" /></span>
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap">Distress Stage</TableHead>
+                  <TableHead className="whitespace-nowrap">Pipeline</TableHead>
+                  <TableHead className="cursor-pointer select-none text-right" onClick={() => toggleSort("estimatedARV")}>
+                    <span className="inline-flex items-center justify-end">Est. ARV <SortIcon col="estimatedARV" /></span>
+                  </TableHead>
+                  <TableHead className="text-right">Equity%</TableHead>
+                  <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("auctionDate")}>
+                    <span className="inline-flex items-center">Auction Date <SortIcon col="auctionDate" /></span>
+                  </TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ) : (
-                paged.map((o) => (
-                  <TableRow key={o.id}>
-                    <TableCell className="font-medium whitespace-nowrap">
-                      <div>{o.address}</div>
-                      <div className="text-xs text-muted-foreground">{o.city}, SC</div>
-                    </TableCell>
-                    <TableCell>{o.county}</TableCell>
-                    <TableCell className="whitespace-nowrap">{o.type}</TableCell>
-                    <TableCell>
-                      <span className={`font-bold ${scoreColor(o.score)}`}>{o.score}</span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={STAGE_VARIANTS[o.stage]}>{STAGE_LABELS[o.stage]}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{PIPELINE_LABELS[o.pipeline]}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">{fmt(o.estimatedValue)}</TableCell>
-                    <TableCell className="text-right">{o.equityPercent}%</TableCell>
-                    <TableCell className="whitespace-nowrap">{o.auctionDate ?? "\u2014"}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link href={`/opportunities/${o.id}`}>
-                          <Eye className="mr-1 h-4 w-4" />
-                          View
-                        </Link>
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {opportunities.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                      No opportunities match the current filters.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  opportunities.map((o) => {
+                    const equityPercent = o.property.estimatedValue > 0
+                      ? Math.round((o.property.equityEstimate / o.property.estimatedValue) * 100)
+                      : 0;
+
+                    return (
+                      <TableRow key={o.id}>
+                        <TableCell className="font-medium whitespace-nowrap">
+                          <div>{o.property.streetAddress}</div>
+                          <div className="text-xs text-muted-foreground">{o.property.city}, {o.property.state}</div>
+                        </TableCell>
+                        <TableCell>{o.property.county}</TableCell>
+                        <TableCell className="whitespace-nowrap">{PROPERTY_TYPE_LABELS[o.property.propertyType]}</TableCell>
+                        <TableCell>
+                          <span className={`font-bold ${scoreColor(o.flipScore)}`}>{o.flipScore}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={DISTRESS_STAGE_VARIANTS[o.distressStage]}>{DISTRESS_STAGE_LABELS[o.distressStage]}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{PIPELINE_LABELS[o.pipelineStage]}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap">{fmt(o.estimatedARV)}</TableCell>
+                        <TableCell className="text-right">{equityPercent}%</TableCell>
+                        <TableCell className="whitespace-nowrap">{o.auctionDate ? new Date(o.auctionDate).toLocaleDateString() : "\u2014"}</TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link href={`/opportunities/${o.id}`}>
+                              <Eye className="mr-1 h-4 w-4" />
+                              View
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
       {/* ---- pagination ---- */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Showing {sorted.length === 0 ? 0 : page * PAGE_SIZE + 1}&ndash;{Math.min((page + 1) * PAGE_SIZE, sorted.length)} of {sorted.length} results
+          Showing {opportunities.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}&ndash;{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount} results
         </p>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+          <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
             <ChevronLeft className="h-4 w-4" />
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page + 1} of {totalPages}
+            Page {page} of {totalPages}
           </span>
-          <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
             Next
             <ChevronRight className="h-4 w-4" />
           </Button>
