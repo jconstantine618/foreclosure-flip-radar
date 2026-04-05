@@ -138,6 +138,7 @@ export default function OpportunityDetailPage() {
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [savingStage, setSavingStage] = useState(false);
+  const [savingNotes, setSavingNotes] = useState(false);
 
   // Comps state
   const [comps, setComps] = useState<any[]>([]);
@@ -157,7 +158,28 @@ export default function OpportunityDetailPage() {
         setApiData(json.data);
         setPipeline(json.data.pipelineStage || "NEW");
         setRehabEstimate(json.data.estimatedRehabCost || 0);
-        setNotes(json.data.property?.notes || []);
+
+        // Load persisted notes + AI analysis from opportunity.notes JSON field
+        let persistedNotes: any[] = [];
+        let persistedAnalysis: any = null;
+        try {
+          const stored = json.data.notes ? JSON.parse(json.data.notes) : null;
+          if (stored) {
+            persistedNotes = stored.userNotes || [];
+            persistedAnalysis = stored.aiAnalysis || null;
+          }
+        } catch {
+          // notes field isn't JSON — ignore
+        }
+        // Merge property.notes (from DB Note model) with persisted user notes
+        const dbNotes = (json.data.property?.notes || []).map((n: any) => ({
+          id: n.id,
+          author: "System",
+          text: n.content,
+          timestamp: new Date(n.createdAt).toLocaleString(),
+        }));
+        setNotes([...persistedNotes, ...dbNotes]);
+        if (persistedAnalysis) setAnalysis(persistedAnalysis);
         setTags([]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");
@@ -170,6 +192,25 @@ export default function OpportunityDetailPage() {
       fetchOpportunity();
     }
   }, [oppId]);
+
+  // Persist notes + AI analysis to the opportunity.notes JSON field
+  async function persistData(updatedNotes?: any[], updatedAnalysis?: any) {
+    const notesToSave = updatedNotes ?? notes;
+    const analysisToSave = updatedAnalysis ?? analysis;
+    const payload = JSON.stringify({
+      userNotes: notesToSave.filter((n: any) => n.author !== "System"),
+      aiAnalysis: analysisToSave,
+    });
+    try {
+      await fetch(`/api/opportunities/${oppId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: payload }),
+      });
+    } catch (err) {
+      console.error("Failed to persist data:", err);
+    }
+  }
 
   // Save pipeline stage to database
   async function handleStageChange(newStage: string) {
@@ -198,7 +239,10 @@ export default function OpportunityDetailPage() {
       const res = await fetch(`/api/properties/${apiData.propertyId}/analysis`);
       if (!res.ok) throw new Error("Analysis request failed");
       const json = await res.json();
-      setAnalysis(json.data?.analysis || json);
+      const result = json.data?.analysis || json;
+      setAnalysis(result);
+      // Persist AI analysis to database
+      await persistData(undefined, result);
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
@@ -323,13 +367,15 @@ export default function OpportunityDetailPage() {
   const projectedGrossMargin = p.estimatedARV - p.targetPurchasePrice - rehabEstimate;
   const projectedNetMargin = Math.round(projectedGrossMargin * 0.67);
 
-  function addNote() {
+  async function addNote() {
     if (!newNote.trim()) return;
-    setNotes((prev) => [
-      { id: `n${Date.now()}`, author: "You", text: newNote.trim(), timestamp: new Date().toLocaleString() },
-      ...prev,
-    ]);
+    const note = { id: `n${Date.now()}`, author: "You", text: newNote.trim(), timestamp: new Date().toLocaleString() };
+    const updatedNotes = [note, ...notes];
+    setNotes(updatedNotes);
     setNewNote("");
+    setSavingNotes(true);
+    await persistData(updatedNotes);
+    setSavingNotes(false);
   }
 
   function addTag() {
