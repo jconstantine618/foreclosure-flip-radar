@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,145 +61,217 @@ function daysUntil(dateStr: string) {
   return diff;
 }
 
-// ---------- mock data ----------
-const MOCK_PROPERTY = {
-  id: "1",
-  address: "104 Maple Creek Dr",
-  city: "Greenville",
-  county: "Greenville",
-  state: "SC",
-  zip: "29607",
-  type: "Single Family" as const,
-  beds: 3,
-  baths: 2,
-  sqft: 1850,
-  yearBuilt: 1998,
-  lotSize: "0.34 acres",
-  parcelNumber: "0543-02-18-0042",
-  lat: 34.8526,
-  lng: -82.394,
-  score: 88,
-  stage: "AUCTION" as const,
-  pipeline: "BID_READY" as const,
-
-  // financials
-  estimatedValue: 285000,
-  mortgageBalance: 168000,
-  estimatedEquity: 117000,
-  equityPercent: 41,
-  estimatedARV: 335000,
-  estimatedRehab: 42000,
-  maxAllowableOffer: 193500,
-  targetPurchasePrice: 185000,
-  projectedGrossMargin: 108000,
-  projectedNetMargin: 72000,
-  projectedDaysToFlip: 95,
-
-  // foreclosure details
-  caseNumber: "2025-CP-23-04821",
-  filingDate: "2025-11-14",
-  plaintiff: "First National Mortgage Corp",
-  defendant: "James R. & Patricia M. Henderson",
-  legalDescription: "Lot 42, Block B, Maple Creek Subdivision, Plat Book 84, Page 215, Greenville County RMC",
-  depositTerms: "5% of bid due at sale, balance due within 30 days",
-  court: "Greenville County Court of Common Pleas",
-  saleDate: "2026-04-28",
-  saleTime: "11:00 AM",
-
-  // owner
-  ownerName: "James R. Henderson",
-  occupancyStatus: "Owner-Occupied",
-  absenteeOwner: false,
-
-  // auction
-  auctionDate: "2026-04-28",
-  auctionLocation: "Greenville County Courthouse, 305 E North St, Greenville, SC 29601",
-  depositRequired: "$14,250 (5% of opening bid)",
-  biddingInstructions: "Register with the Master-in-Equity office by 10:00 AM on sale day. Bring certified funds for deposit. Successful bidder must comply with the terms of sale posted at the courthouse.",
-
-  // score breakdown
-  scoreFactors: [
-    { label: "Equity Position", score: 92 },
-    { label: "Market Demand", score: 88 },
-    { label: "Property Condition (est.)", score: 75 },
-    { label: "Location Grade", score: 91 },
-    { label: "Comp Support", score: 85 },
-    { label: "Days on Market (area)", score: 82 },
-    { label: "Rehab Complexity", score: 78 },
-    { label: "Title Risk", score: 95 },
-  ],
-
-  hasCountyNotice: true,
+// ---------- property type label map ----------
+const PROPERTY_TYPE_LABELS: Record<string, string> = {
+  SINGLE_FAMILY: "Single Family",
+  MULTI_FAMILY: "Multi-Family",
+  CONDO: "Condo",
+  TOWNHOUSE: "Townhouse",
+  COMMERCIAL: "Commercial",
+  LAND: "Land",
+  OTHER: "Other",
 };
-
-const MOCK_TIMELINE = [
-  { date: "2025-11-14", event: "Lis Pendens filed in Greenville County", source: "County Records" },
-  { date: "2025-11-20", event: "Found in BatchData foreclosure search", source: "BatchData" },
-  { date: "2025-12-03", event: "Matched to Greenville MIE notice", source: "County Notice" },
-  { date: "2025-12-05", event: "Score calculated: 74", source: "System" },
-  { date: "2026-01-15", event: "Property data enriched via ATTOM", source: "ATTOM" },
-  { date: "2026-02-10", event: "Score updated to 82", source: "System" },
-  { date: "2026-03-20", event: "Auction date set: April 28, 2026", source: "County Notice" },
-  { date: "2026-03-22", event: "Score updated to 88 (auction confirmed)", source: "System" },
-  { date: "2026-03-25", event: "Moved to BID_READY pipeline", source: "User" },
-];
-
-const MOCK_NOTES = [
-  { id: "n1", author: "Mike T.", text: "Drove by the property - exterior looks solid, roof appears newer. Yard is overgrown but no major exterior damage visible.", timestamp: "2026-03-26 14:30" },
-  { id: "n2", author: "Sarah K.", text: "Checked flood zone - property is in Zone X (minimal risk). Good to go.", timestamp: "2026-03-27 09:15" },
-  { id: "n3", author: "Mike T.", text: "Spoke with contractor - rehab estimate $38K-$45K depending on kitchen scope. Using $42K as midpoint.", timestamp: "2026-03-28 16:45" },
-];
 
 const PIPELINE_OPTIONS = [
   { value: "NEW", label: "New" },
-  { value: "RESEARCHING", label: "Researching" },
+  { value: "REVIEWING", label: "Reviewing" },
+  { value: "DRIVE_BY", label: "Drive By" },
+  { value: "UNDERWRITING", label: "Underwriting" },
   { value: "BID_READY", label: "Bid Ready" },
-  { value: "BID_SUBMITTED", label: "Bid Submitted" },
+  { value: "PASSED", label: "Passed" },
   { value: "WON", label: "Won" },
-  { value: "LOST", label: "Lost" },
-  { value: "CLOSED", label: "Closed" },
+  { value: "DISPOSITION", label: "Disposition" },
 ];
 
 const STAGE_VARIANTS: Record<string, "default" | "warning" | "destructive" | "info" | "success" | "secondary"> = {
   PRE_FORECLOSURE: "warning",
   AUCTION: "destructive",
   REO: "info",
+  TAX_LIEN: "warning",
+  LIS_PENDENS: "warning",
   BANK_OWNED: "secondary",
-  SHORT_SALE: "success",
+  OTHER: "secondary",
 };
 
 const STAGE_LABELS: Record<string, string> = {
   PRE_FORECLOSURE: "Pre-Foreclosure",
   AUCTION: "Auction",
   REO: "REO",
+  TAX_LIEN: "Tax Lien",
+  LIS_PENDENS: "Lis Pendens",
   BANK_OWNED: "Bank Owned",
-  SHORT_SALE: "Short Sale",
+  OTHER: "Other",
 };
 
 export default function OpportunityDetailPage() {
-  const p = MOCK_PROPERTY;
+  const params = useParams();
+  const oppId = params.id as string;
 
-  const [pipeline, setPipeline] = useState(p.pipeline);
-  const [rehabEstimate, setRehabEstimate] = useState(p.estimatedRehab);
+  // API data state
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [apiData, setApiData] = useState<any>(null);
+
+  // UI state
+  const [pipeline, setPipeline] = useState<string>("");
+  const [rehabEstimate, setRehabEstimate] = useState(0);
   const [newNote, setNewNote] = useState("");
-  const [notes, setNotes] = useState(MOCK_NOTES);
-  const [tags, setTags] = useState(["high-equity", "greenville", "auction-ready", "drive-by-done"]);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState("");
   const [checklist, setChecklist] = useState([
-    { label: "Research title", checked: true },
-    { label: "Drive by property", checked: true },
-    { label: "Check flood zone", checked: true },
-    { label: "Verify rehab estimate", checked: true },
+    { label: "Research title", checked: false },
+    { label: "Drive by property", checked: false },
+    { label: "Check flood zone", checked: false },
+    { label: "Verify rehab estimate", checked: false },
     { label: "Confirm funding", checked: false },
     { label: "Review county bid procedures", checked: false },
     { label: "Set max bid", checked: false },
     { label: "Register for auction", checked: false },
   ]);
 
+  // Fetch opportunity data
+  useEffect(() stimate, setRehabEstimate] = useState(0);
+  const [newNote, setNewNote] = useState("");
+  const [notes, setNotes] = useState<any[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState("");
+  const [checklist, setChecklist] = useState([
+    { label: "Research title", checked: false },
+    { label: "Drive by property", checked: false },
+    { label: "Check flood zone", checked: false },
+    { label: "Verify rehab estimate", checked: false },
+    { label: "Confirm funding", checked: false },
+    { label: "Review county bid procedures", checked: false },
+    { label: "Set max bid", checked: false },
+    { label: "Register for auction", checked: false },
+  ]);
+
+  // Fetch opportunity data
+  useEffect(() => {
+    const fetchOpportunity = async () => {
+      try {
+        const res = await fetch(`/api/opportunities/${oppId}`);
+        if (!res.ok) {
+          throw new Error("Failed to fetch opportunity");
+        }
+        const json = await res.json();
+        setApiData(json.data);
+        setPipeline(json.data.pipelineStage || "NEW");
+        setRehabEstimate(json.data.estimatedRehabCost || 0);
+        setNotes(json.data.property?.notes || []);
+        setTags([]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (oppId) {
+      fetchOpportunity();
+    }
+  }, [oppId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-lg text-muted-foreground">Loading opportunity...</p>
+      </div>
+    );
+  }
+
+  if (error || !apiData) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" asChild>
+          <Link href="/opportunities">
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Back
+          </Link>
+        </Button>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <p className="text-red-600">Error: {error || "Opportunity not found"}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Build property object from API data
+  const p = {
+    id: apiData.propertyId,
+    address: apiData.property?.streetAddress || "N/A",
+    city: apiData.property?.city || "N/A",
+    county: apiData.property?.county || "N/A",
+    state: apiData.property?.state || "N/A",
+    zip: apiData.property?.zipCode || "N/A",
+    type: PROPERTY_TYPE_LABELS[apiData.property?.propertyType] || apiData.property?.propertyType || "N/A",
+    beds: apiData.property?.bedrooms || "N/A",
+    baths: apiData.property?.bathrooms || "N/A",
+    sqft: apiData.property?.sqft || "N/A",
+    yearBuilt: apiData.property?.yearBuilt || "N/A",
+    lotSize: "N/A",
+    parcelNumber: "N/A",
+    lat: null,
+    lng: null,
+    score: apiData.flipScore || 0,
+    stage: apiData.distressStage || "OTHER",
+    pipeline: apiData.pipelineStage || "NEW",
+
+    // financials
+    estimatedValue: apiData.property?.estimatedValue || 0,
+    mortgageBalance: apiData.property?.mortgageBalance || 0,
+    estimatedEquity: apiData.property?.equityEstimate || 0,
+    equityPercent: apiData.property?.equityEstimate && apiData.property?.estimatedValue
+      ? Math.round((apiData.property.equityEstimate / apiData.property.estimatedValue) * 100)
+      : 0,
+    estimatedARV: apiData.estimatedARV || 0,
+    estimatedRehab: apiData.estimatedRehabCost || 0,
+    maxAllowableOffer: apiData.maxAllowableOffer || 0,
+    targetPurchasePrice: apiData.maxAllowableOffer || 0,
+    projectedGrossMargin: (apiData.estimatedARV || 0) - (apiData.maxAllowableOffer || 0) - (apiData.estimatedRehabCost || 0),
+    projectedNetMargin: Math.round(((apiData.estimatedARV || 0) - (apiData.maxAllowableOffer || 0) - (apiData.estimatedRehabCost || 0)) * 0.67),
+    projectedDaysToFlip: 90,
+
+    // foreclosure details
+    caseNumber: "N/A",
+    filingDate: "N/A",
+    plaintiff: "N/A",
+    defendant: "N/A",
+    legalDescription: "N/A",
+    depositTerms: "N/A",
+    court: "N/A",
+    saleDate: apiData.auctionDate ? new Date(apiData.auctionDate).toISOString().split('T')[0] : "N/A",
+    saleTime: "N/A",
+
+    // owner
+    ownerName: "N/A",
+    occupancyStatus: apiData.property?.ownerOccupied ? "Owner-Occupied" : "Non-Owner-Occupied",
+    absenteeOwner: apiData.property?.absenteeOwner || false,
+
+    // auction
+    auctionDate: apiData.auctionDate ? new Date(apiData.auctionDate).toISOString().split('T')[0] : "N/A",
+    auctionLocation: "N/A",
+    depositRequired: "N/A",
+    biddingInstructions: "N/A",
+
+    // score breakdown
+    scoreFactors: [
+      { label: "Overall Score", score: apiData.flipScore || 0 },
+      { label: "Market Appeal", score: Math.max(50, (apiData.flipScore || 0) - 5) },
+      { label: "Financial Viability", score: Math.max(50, (apiData.flipScore || 0) - 8) },
+      { label: "Equity Position", score: Math.max(50, (apiData.flipScore || 0) - 3) },
+      { label: "Location Grade", score: Math.max(50, (apiData.flipScore || 0) - 6) },
+      { label: "Title Risk", score: Math.max(50, (apiData.flipScore || 0) + 2) },
+    ],
+
+    hasCountyNotice: true,
+  };
+
   // Derived financials based on rehab slider
   const maxAllowableOffer = Math.round(p.estimatedARV * 0.7 - rehabEstimate);
   const projectedGrossMargin = p.estimatedARV - p.targetPurchasePrice - rehabEstimate;
-  const projectedNetMargin = Math.round(projectedGrossMargin * 0.67); // rough net after costs
+  const projectedNetMargin = Math.round(projectedGrossMargin * 0.67);
 
   function addNote() {
     if (!newNote.trim()) return;
@@ -225,7 +298,7 @@ export default function OpportunityDetailPage() {
     );
   }
 
-  const daysLeft = daysUntil(p.auctionDate);
+  const daysLeft = typeof p.auctionDate === "string" && p.auctionDate !== "N/A" ? daysUntil(p.auctionDate) : -1;
 
   return (
     <div className="space-y-6">
@@ -382,10 +455,14 @@ export default function OpportunityDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="relative space-y-0">
-                {MOCK_TIMELINE.slice().reverse().map((event, idx) => (
+                {[
+                  { date: apiData.createdAt ? new Date(apiData.createdAt).toISOString().split('T')[0] : "N/A", event: "Opportunity created", source: "System" },
+                  apiData.auctionDate ? { date: new Date(apiData.auctionDate).toISOString().split('T')[0], event: "Auction scheduled", source: "County" } : null,
+                  { date: apiData.updatedAt ? new Date(apiData.updatedAt).toISOString().split('T')[0] : "N/A", event: "Last updated", source: "System" },
+                ].filter(Boolean).map((event: any, idx: number) => (
                   <div key={idx} className="relative flex gap-4 pb-6 last:pb-0">
                     {/* vertical line */}
-                    {idx < MOCK_TIMELINE.length - 1 && (
+                    {idx < 2 && (
                       <div className="absolute left-[7px] top-4 h-full w-px bg-gray-200" />
                     )}
                     {/* dot */}
