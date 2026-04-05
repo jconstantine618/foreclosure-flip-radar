@@ -37,6 +37,7 @@ import {
   Tag,
   Brain,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -138,6 +139,12 @@ export default function OpportunityDetailPage() {
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [savingStage, setSavingStage] = useState(false);
 
+  // Comps state
+  const [comps, setComps] = useState<any[]>([]);
+  const [compsLoading, setCompsLoading] = useState(false);
+  const [compsError, setCompsError] = useState<string | null>(null);
+  const [arvStats, setArvStats] = useState<any>(null);
+
   // Fetch opportunity data
   useEffect(() => {
     const fetchOpportunity = async () => {
@@ -191,11 +198,28 @@ export default function OpportunityDetailPage() {
       const res = await fetch(`/api/properties/${apiData.propertyId}/analysis`);
       if (!res.ok) throw new Error("Analysis request failed");
       const json = await res.json();
-      setAnalysis(json);
+      setAnalysis(json.data?.analysis || json);
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Analysis failed");
     } finally {
       setAnalysisLoading(false);
+    }
+  }
+
+  async function fetchComps(refresh = false) {
+    if (!apiData?.propertyId) return;
+    setCompsLoading(true);
+    setCompsError(null);
+    try {
+      const res = await fetch(`/api/properties/${apiData.propertyId}/comps${refresh ? "?refresh=true" : ""}`);
+      if (!res.ok) throw new Error("Failed to fetch comps");
+      const json = await res.json();
+      setComps(json.data?.comps || []);
+      setArvStats(json.data?.arv || null);
+    } catch (err) {
+      setCompsError(err instanceof Error ? err.message : "Failed to fetch comps");
+    } finally {
+      setCompsLoading(false);
     }
   }
 
@@ -559,18 +583,123 @@ export default function OpportunityDetailPage() {
             </CardContent>
           </Card>
 
-          {/* 6. Comps Module Placeholder */}
+          {/* 6. Comparable Sales */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5" />
-                Comparable Sales
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex h-40 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
-                <p className="text-sm text-muted-foreground">Comparable sales module - coming soon</p>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Comparable Sales
+                  {comps.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">{comps.length} comps</Badge>
+                  )}
+                </CardTitle>
+                <div className="flex gap-2">
+                  {comps.length > 0 && (
+                    <Button size="sm" variant="outline" onClick={() => fetchComps(true)} disabled={compsLoading}>
+                      <RefreshCw className={`mr-1 h-3 w-3 ${compsLoading ? "animate-spin" : ""}`} />
+                      Refresh
+                    </Button>
+                  )}
+                  {comps.length === 0 && !compsLoading && (
+                    <Button size="sm" onClick={() => fetchComps(false)} disabled={compsLoading}>
+                      <TrendingUp className="mr-1 h-4 w-4" />
+                      Fetch Comps
+                    </Button>
+                  )}
+                </div>
               </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {compsLoading && (
+                <div className="flex flex-col items-center justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                  <p className="text-sm text-muted-foreground">Fetching comparable sales...</p>
+                </div>
+              )}
+
+              {compsError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                  {compsError}
+                  <Button size="sm" variant="ghost" className="ml-2" onClick={() => fetchComps(false)}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+
+              {!compsLoading && comps.length === 0 && !compsError && (
+                <div className="text-center py-6">
+                  <p className="text-sm text-muted-foreground mb-3">
+                    Pull comparable sales to estimate ARV and validate your deal economics.
+                  </p>
+                  <Button onClick={() => fetchComps(false)} disabled={compsLoading}>
+                    <TrendingUp className="mr-2 h-4 w-4" />
+                    Fetch Comparable Sales
+                  </Button>
+                </div>
+              )}
+
+              {/* ARV Summary */}
+              {arvStats && (
+                <div className="rounded-lg border bg-green-50 border-green-200 p-4">
+                  <h4 className="text-sm font-semibold text-green-800 mb-2">After Repair Value (ARV)</h4>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div>
+                      <p className="text-xs text-green-600">Median</p>
+                      <p className="text-lg font-bold text-green-800">${arvStats.median?.toLocaleString() || "N/A"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-600">Mean</p>
+                      <p className="text-lg font-bold text-green-800">${arvStats.mean?.toLocaleString() || "N/A"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-600">Range</p>
+                      <p className="text-sm font-medium text-green-800">
+                        ${arvStats.low?.toLocaleString() || "?"} – ${arvStats.high?.toLocaleString() || "?"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-green-600">$/SqFt</p>
+                      <p className="text-lg font-bold text-green-800">${arvStats.medianPricePerSqft?.toLocaleString() || "N/A"}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Comps Table */}
+              {comps.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs text-muted-foreground">
+                        <th className="pb-2 pr-3">Address</th>
+                        <th className="pb-2 pr-3">Sale Price</th>
+                        <th className="pb-2 pr-3">Sale Date</th>
+                        <th className="pb-2 pr-3">SqFt</th>
+                        <th className="pb-2 pr-3">Bed/Bath</th>
+                        <th className="pb-2 pr-3">$/SqFt</th>
+                        <th className="pb-2">Distance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comps.map((c: any, i: number) => (
+                        <tr key={i} className="border-b last:border-0">
+                          <td className="py-2 pr-3">
+                            <div className="font-medium">{c.address}</div>
+                            <div className="text-xs text-muted-foreground">{c.city}, {c.state} {c.zipCode}</div>
+                          </td>
+                          <td className="py-2 pr-3 font-medium">${c.salePrice?.toLocaleString()}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap">{c.saleDate ? new Date(c.saleDate).toLocaleDateString() : "N/A"}</td>
+                          <td className="py-2 pr-3">{c.sqft?.toLocaleString() || "N/A"}</td>
+                          <td className="py-2 pr-3">{c.bedrooms || "?"}/{c.bathrooms || "?"}</td>
+                          <td className="py-2 pr-3">${c.pricePerSqft?.toLocaleString() || "N/A"}</td>
+                          <td className="py-2">{c.distanceMiles?.toFixed(1) || "?"} mi</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
 
