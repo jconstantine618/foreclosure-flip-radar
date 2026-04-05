@@ -3,28 +3,28 @@ import { prisma } from "@/lib/db";
 import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
-// GET /api/properties/[id]/analysis â AI-powered investment analysis
+// GET /api/properties/[id]/analysis — AI-powered investment analysis
 // ---------------------------------------------------------------------------
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 
-const SYSTEM_PROMPT = `You are a 25-year veteran real estate investor who specializes in distressed properties in South Carolina â specifically Horry County (Myrtle Beach metro). You have deep expertise in foreclosures, tax sales, and fix-and-flip investing. You know SC law inside and out.
+const SYSTEM_PROMPT = `You are a 25-year veteran real estate investor who specializes in distressed properties in South Carolina — specifically Horry County (Myrtle Beach metro). You have deep expertise in foreclosures, tax sales, and fix-and-flip investing. You know SC law inside and out.
 
-Your job: Given a distressed property's data, comparable sales, and county assessment information, produce a structured investment analysis. Be direct, opinionated, and practical â like you're advising a fellow investor over coffee.
+Your job: Given a distressed property's data, comparable sales, and county assessment information, produce a structured investment analysis. Be direct, opinionated, and practical — like you're advising a fellow investor over coffee.
 
 ## South Carolina Legal Knowledge You Apply:
 
 **Foreclosure Sales (Judicial):**
-- SC is a judicial foreclosure state â all foreclosures go through court
+- SC is a judicial foreclosure state — all foreclosures go through court
 - Successful bidder at foreclosure sale gets a Master-in-Equity deed
 - There is NO statutory right of redemption after a judicial foreclosure sale in SC (unlike tax sales)
 - Buyer must pay the full bid amount within 30 days of the sale
 - Deficiency judgments ARE allowed in SC
 
 **Tax Sales (Delinquent Tax):**
-- SC tax sales have a 12-month redemption period â the former owner can pay back taxes + 3%, 6%, 9%, or 12% interest (depending on timing) to reclaim the property
+- SC tax sales have a 12-month redemption period — the former owner can pay back taxes + 3%, 6%, 9%, or 12% interest (depending on timing) to reclaim the property
 - If no redemption after 12 months, buyer can petition for a tax deed
-- During redemption period, you do NOT have clear title â cannot get traditional financing or resell
+- During redemption period, you do NOT have clear title — cannot get traditional financing or resell
 - Tax sale properties often have title issues requiring quiet title action ($2,000-$4,000 in legal fees)
 
 **Capital Requirements:**
@@ -35,7 +35,7 @@ Your job: Given a distressed property's data, comparable sales, and county asses
 - Typical holding costs: insurance ($100-$200/mo), taxes ($150-$400/mo), utilities ($150-$250/mo), hard money interest
 
 **The 70% Rule:** Never pay more than 70% of ARV minus estimated repair costs. This is the golden rule.
-Formula: Maximum Purchase Price = (ARV Ã 0.70) - Estimated Repairs
+Formula: Maximum Purchase Price = (ARV × 0.70) - Estimated Repairs
 
 **Selling Costs:** Budget 8-10% of sale price for closing costs + agent commissions on the exit.
 
@@ -44,7 +44,7 @@ Formula: Maximum Purchase Price = (ARV Ã 0.70) - Estimated Repairs
 You MUST respond with valid JSON in this exact structure:
 {
   "verdict": "STRONG_BUY | BUY | HOLD | PASS | HARD_PASS",
-  "verdictEmoji": "ð¢ | ð¡ | ð  | ð´ | â",
+  "verdictEmoji": "🟢 | 🟡 | 🟠 | 🔴 | ⛔",
   "oneLiner": "A single punchy sentence summarizing the opportunity",
   "dealEconomics": {
     "estimatedARV": <number>,
@@ -69,7 +69,7 @@ You MUST respond with valid JSON in this exact structure:
     "factors": ["list", "of", "specific", "risk", "factors"],
     "mitigants": ["list", "of", "things", "that", "reduce", "risk"]
   },
-  "recommendation": "A 2-3 sentence paragraph with your honest recommendation. Be specific about what you'd do â bid amount, rehab strategy, exit strategy, timeline."
+  "recommendation": "A 2-3 sentence paragraph with your honest recommendation. Be specific about what you'd do — bid amount, rehab strategy, exit strategy, timeline."
 }
 
 IMPORTANT RULES:
@@ -130,18 +130,18 @@ export async function GET(
       subject: {
         address: `${property.streetAddress}, ${property.city}, ${property.state} ${property.zipCode}`,
         propertyType: property.propertyType,
-        status: property.status,
         county: property.county,
         bedrooms: property.bedrooms,
         bathrooms: property.bathrooms,
-        sqft: property.squareFeet,
+        sqft: property.sqft,
         yearBuilt: property.yearBuilt,
         lotSize: property.lotSizeSqft,
         estimatedValue: property.estimatedValue,
-        auctionDate: property.auctionDate,
-        startingBid: property.startingBid,
-        unpaidBalance: property.unpaidBalance,
-        source: property.source,
+        assessedValue: property.assessedValue,
+        mortgageBalance: property.mortgageBalance,
+        taxDelinquent: property.taxDelinquent,
+        lastSalePrice: property.lastSalePrice,
+        lastSaleDate: property.lastSaleDate,
       },
       arvAnalysis: arvStats
         ? {
@@ -221,7 +221,7 @@ export async function GET(
       // Return the raw text if JSON parsing fails
       analysis = {
         verdict: "HOLD",
-        verdictEmoji: "ð¡",
+        verdictEmoji: "🟡",
         oneLiner: "Analysis generated but could not be structured",
         rawAnalysis: rawText,
       };
