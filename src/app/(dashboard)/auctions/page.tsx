@@ -183,10 +183,13 @@ export default function AuctionsPage() {
 
   const filtered = useMemo(() => {
     return auctions.filter((a) => {
+      // Always filter out past auctions
+      const days = daysUntil(a.date);
+      if (days < 0) return false;
+
       if (county !== "ALL" && a.county !== county) return false;
       if (auctionType !== "ALL" && a.type !== auctionType) return false;
       if (dateRange !== "all") {
-        const days = daysUntil(a.date);
         if (dateRange === "this_week" && days > 7) return false;
         if (dateRange === "next_2_weeks" && days > 14) return false;
         if (dateRange === "this_month" && days > 30) return false;
