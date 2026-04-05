@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -107,131 +107,56 @@ function scoreColor(score: number) {
   return "bg-red-500/15 text-red-700";
 }
 
-// ---------- mock data ----------
-const MOCK_PIPELINE: PipelineCard[] = [
-  {
-    id: "p1",
-    address: "104 Maple Creek Dr",
-    city: "Greenville",
-    county: "Greenville",
-    score: 88,
-    estimatedValue: 245000,
-    stage: "BID_READY",
-    daysInStage: 2,
-  },
-  {
-    id: "p2",
-    address: "2215 Pelham Rd",
-    city: "Greenville",
-    county: "Greenville",
-    score: 82,
-    estimatedValue: 198000,
-    stage: "UNDERWRITING",
-    daysInStage: 4,
-  },
-  {
-    id: "p3",
-    address: "503 Ocean Blvd",
-    city: "Myrtle Beach",
-    county: "Horry",
-    score: 76,
-    estimatedValue: 310000,
-    stage: "REVIEWING",
-    daysInStage: 6,
-  },
-  {
-    id: "p4",
-    address: "7801 Kings Hwy",
-    city: "Myrtle Beach",
-    county: "Horry",
-    score: 69,
-    estimatedValue: 95000,
-    stage: "NEW",
-    daysInStage: 1,
-  },
-  {
-    id: "p5",
-    address: "628 Laurens Rd",
-    city: "Greenville",
-    county: "Greenville",
-    score: 80,
-    estimatedValue: 212000,
-    stage: "DRIVE_BY",
-    daysInStage: 3,
-  },
-  {
-    id: "p6",
-    address: "1500 Hwy 17 S",
-    city: "Surfside Beach",
-    county: "Horry",
-    score: 58,
-    estimatedValue: 178000,
-    stage: "PASSED",
-    daysInStage: 8,
-  },
-  {
-    id: "p7",
-    address: "334 N Main St",
-    city: "Mauldin",
-    county: "Greenville",
-    score: 74,
-    estimatedValue: 340000,
-    stage: "REVIEWING",
-    daysInStage: 2,
-  },
-  {
-    id: "p8",
-    address: "212 Augusta St",
-    city: "Greenville",
-    county: "Greenville",
-    score: 95,
-    estimatedValue: 415000,
-    stage: "WON",
-    daysInStage: 5,
-  },
-  {
-    id: "p9",
-    address: "910 Sea Mountain Hwy",
-    city: "North Myrtle Beach",
-    county: "Horry",
-    score: 63,
-    estimatedValue: 72000,
-    stage: "NEW",
-    daysInStage: 3,
-  },
-  {
-    id: "p10",
-    address: "4420 Clemson Blvd",
-    city: "Anderson",
-    county: "Greenville",
-    score: 78,
-    estimatedValue: 165000,
-    stage: "UNDERWRITING",
-    daysInStage: 7,
-  },
-  {
-    id: "p11",
-    address: "1822 Woodruff Rd",
-    city: "Greenville",
-    county: "Greenville",
-    score: 91,
-    estimatedValue: 289000,
-    stage: "DISPOSITION",
-    daysInStage: 12,
-  },
-  {
-    id: "p12",
-    address: "405 21st Ave N",
-    city: "Myrtle Beach",
-    county: "Horry",
-    score: 72,
-    estimatedValue: 225000,
-    stage: "DRIVE_BY",
-    daysInStage: 1,
-  },
-];
 
 export default function PipelinePage() {
+  const [cards, setCards] = useState<PipelineCard[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchOpportunities = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await fetch(
+          "/api/opportunities?limit=100&sort=flipScore&order=desc"
+        );
+        if (!response.ok) {
+          throw new Error(`Failed to fetch opportunities: ${response.status}`);
+        }
+        const data = await response.json();
+
+        // Map API response to PipelineCard shape
+        const mappedCards: PipelineCard[] = (data.data || data || []).map(
+          (opp: any) => {
+            const daysInStage = Math.floor(
+              (Date.now() - new Date(opp.updatedAt).getTime()) / 86400000
+            );
+            return {
+              id: opp.id,
+              address: opp.property?.streetAddress || "Unknown",
+              city: opp.property?.city || "",
+              county: opp.property?.county || "",
+              score: opp.flipScore || 0,
+              estimatedValue: opp.property?.estimatedValue || 0,
+              stage: opp.pipelineStage as PipelineStage,
+              daysInStage: Math.max(0, daysInStage),
+            };
+          }
+        );
+
+        setCards(mappedCards);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unknown error");
+        setCards([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOpportunities();
+  }, []);
+
   const grouped = useMemo(() => {
     const map: Record<PipelineStage, PipelineCard[]> = {
       NEW: [],
@@ -243,11 +168,39 @@ export default function PipelinePage() {
       WON: [],
       DISPOSITION: [],
     };
-    MOCK_PIPELINE.forEach((card) => {
+    cards.forEach((card) => {
       map[card.stage].push(card);
     });
     return map;
-  }, []);
+  }, [cards]);
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Pipeline"
+          description="Track properties through your acquisition workflow. Drag-and-drop coming soon."
+        />
+        <div className="flex items-center justify-center rounded-lg border border-dashed border-gray-300 p-12 text-muted-foreground">
+          Loading opportunities...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Pipeline"
+          description="Track properties through your acquisition workflow. Drag-and-drop coming soon."
+        />
+        <div className="flex items-center justify-center rounded-lg border border-dashed border-red-300 bg-red-50 p-12 text-red-700">
+          Error loading opportunities: {error}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -331,7 +284,7 @@ export default function PipelinePage() {
 
       {/* Summary */}
       <div className="text-sm text-muted-foreground">
-        {MOCK_PIPELINE.length} properties across {STAGES.length} stages
+        {cards.length} properties across {STAGES.length} stages
       </div>
     </div>
   );
