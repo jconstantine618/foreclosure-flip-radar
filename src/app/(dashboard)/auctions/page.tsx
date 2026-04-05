@@ -168,7 +168,7 @@ export default function AuctionsPage() {
         const opportunities = Array.isArray(data) ? data : data.data || [];
         const mapped = opportunities
           .map(mapOpportunityToAuction)
-          .filter((a): a is Auction => a !== null);
+          .filter((a: Auction | null): a is Auction => a !== null);
         setAuctions(mapped);
         setError(null);
       } catch (err) {
