@@ -5,7 +5,7 @@ import { initializeProviders, providerRegistry } from "@/lib/providers";
 import { BatchDataPropertyProvider } from "@/lib/providers/batchdata/provider";
 
 // ---------------------------------------------------------------------------
-// GET /api/properties/[id]/comps â Fetch comparable sales on demand
+// GET /api/properties/[id]/comps Ã¢ÂÂ Fetch comparable sales on demand
 // ---------------------------------------------------------------------------
 
 export async function GET(
@@ -110,7 +110,34 @@ export async function GET(
       orderBy: { salePrice: "desc" },
     });
 
-    const arvStats = calculateARV(storedComps);
+    let arvStats = calculateARV(storedComps);
+
+    // 5b. Fallback: if no comps found, use property's own valuation as ARV
+    if (arvStats.compCount === 0) {
+      const fallbackValue =
+        property.estimatedValue ??
+        property.assessedValue ??
+        property.lastSalePrice ??
+        null;
+
+      if (fallbackValue && fallbackValue > 0) {
+        arvStats = {
+          median: fallbackValue,
+          mean: fallbackValue,
+          low: fallbackValue,
+          high: fallbackValue,
+          medianPricePerSqft:
+            property.sqft && property.sqft > 0
+              ? Math.round(fallbackValue / property.sqft)
+              : null,
+          compCount: 0,
+        };
+        logger.info(
+          { propertyId, fallbackValue },
+          "No comps found â using property valuation as ARV fallback",
+        );
+      }
+    }
 
     // 6. Update the property's estimatedValue with the ARV
     if (arvStats.median) {
