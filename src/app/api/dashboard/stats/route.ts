@@ -8,30 +8,37 @@ export async function GET() {
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
 
-    const totalOpportunities = await prisma.property.count();
-    const lastWeekTotal = await prisma.property.count({
-      where: { createdAt: { lt: weekAgo } },
+    // Total active opportunities
+    const totalOpportunities = await prisma.opportunity.count({
+      where: { isActive: true },
+    });
+    const lastWeekTotal = await prisma.opportunity.count({
+      where: { isActive: true, createdAt: { lt: weekAgo } },
     });
     const totalChange = totalOpportunities - lastWeekTotal;
 
-    const hotLeads = await prisma.property.count({
-      where: { flipScore: { gt: 75 } },
+    // Hot leads: flipScore > 75
+    const hotLeads = await prisma.opportunity.count({
+      where: { isActive: true, flipScore: { gt: 75 } },
     });
-    const lastWeekHotLeads = await prisma.property.count({
-      where: { flipScore: { gt: 75 }, createdAt: { lt: weekAgo } },
+    const lastWeekHotLeads = await prisma.opportunity.count({
+      where: { isActive: true, flipScore: { gt: 75 }, createdAt: { lt: weekAgo } },
     });
     const hotLeadsChange = hotLeads - lastWeekHotLeads;
 
-    const newToday = await prisma.property.count({
+    // New today
+    const newToday = await prisma.opportunity.count({
       where: { createdAt: { gte: todayStart } },
     });
-    const newYesterday = await prisma.property.count({
+    const newYesterday = await prisma.opportunity.count({
       where: { createdAt: { gte: yesterdayStart, lt: todayStart } },
     });
     const newTodayChange = newToday - newYesterday;
 
-    const pipelineCounts = await prisma.property.groupBy({
+    // Pipeline breakdown by stage
+    const pipelineCounts = await prisma.opportunity.groupBy({
       by: ["pipelineStage"],
+      where: { isActive: true },
       _count: { id: true },
     });
 
