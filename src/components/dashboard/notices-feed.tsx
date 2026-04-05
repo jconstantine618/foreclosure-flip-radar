@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,7 @@ import {
   Landmark,
 } from "lucide-react";
 
-// TODO: Replace with real data from API/database
-interface MockNotice {
+interface Notice {
   id: string;
   noticeType: string;
   address: string;
@@ -28,6 +28,18 @@ interface MockNotice {
   saleDate: string | null;
   source: string;
   publishedDate: string;
+}
+
+interface Opportunity {
+  id: string;
+  distressStage: string;
+  auctionDate: string | null;
+  createdAt: string;
+  property: {
+    streetAddress: string;
+    city: string;
+    county: string;
+  };
 }
 
 const NOTICE_TYPE_CONFIG: Record<
@@ -56,61 +68,52 @@ const NOTICE_TYPE_CONFIG: Record<
   },
 };
 
-const MOCK_NOTICES: MockNotice[] = [
-  {
-    id: "n1",
-    noticeType: "Notice of Sale",
-    address: "142 Pelham Rd, Greenville, SC 29615",
-    county: "Greenville",
-    saleDate: "2026-04-14",
-    source: "Greenville MIE",
-    publishedDate: "2026-03-31",
-  },
-  {
-    id: "n2",
-    noticeType: "Lis Pendens",
-    address: "88 Augusta St, Greenville, SC 29601",
-    county: "Greenville",
-    saleDate: null,
-    source: "SC Public Notices",
-    publishedDate: "2026-03-30",
-  },
-  {
-    id: "n3",
-    noticeType: "Notice of Default",
-    address: "1450 Highway 17 S, Surfside Beach, SC 29575",
-    county: "Horry",
-    saleDate: "2026-04-21",
-    source: "Horry MIE",
-    publishedDate: "2026-03-29",
-  },
-  {
-    id: "n4",
-    noticeType: "Tax Lien",
-    address: "215 Highmarket St, Georgetown, SC 29440",
-    county: "Georgetown",
-    saleDate: "2026-05-05",
-    source: "SC Public Notices",
-    publishedDate: "2026-03-28",
-  },
-  {
-    id: "n5",
-    noticeType: "Master in Equity",
-    address: "6100 N Ocean Blvd, Myrtle Beach, SC 29572",
-    county: "Horry",
-    saleDate: "2026-04-03",
-    source: "Horry Upset Sales",
-    publishedDate: "2026-03-27",
-  },
-];
+function mapDistressStageToNoticeType(stage: string): string {
+  const mapping: Record<string, string> = {
+    AUCTION: "Master in Equity",
+    LIS_PENDENS: "Lis Pendens",
+    TAX_LIEN: "Tax Lien",
+    NOTICE_OF_DEFAULT: "Notice of Default",
+    NOTICE_OF_SALE: "Notice of Sale",
+  };
+  return mapping[stage] || "Notice of Sale";
+}
 
 export function NoticesFeed() {
-  // TODO: Fetch real notices sorted by publishedDate desc, limited to 5
-  const notices = [...MOCK_NOTICES].sort(
-    (a, b) =>
-      new Date(b.publishedDate).getTime() -
-      new Date(a.publishedDate).getTime()
-  );
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchNotices = async () => {
+      try {
+        const response = await fetch(
+          "/api/opportunities?limit=5&sort=createdAt&order=desc"
+        );
+        if (!response.ok) throw new Error("Failed to fetch opportunities");
+
+        const data = await response.json();
+        const opportunities = data.data || [];
+
+        const noticeList = opportunities.map((opp: Opportunity) => ({
+          id: opp.id,
+          noticeType: mapDistressStageToNoticeType(opp.distressStage),
+          address: `${opp.property.streetAddress}, ${opp.property.city}`,
+          county: opp.property.county,
+          saleDate: opp.auctionDate,
+          source: "Foreclosure System",
+          publishedDate: opp.createdAt,
+        }));
+
+        setNotices(noticeList);
+      } catch (error) {
+        console.error("Error fetching notices:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchNotices();
+  }, []);
 
   return (
     <Card>
@@ -119,7 +122,12 @@ export function NoticesFeed() {
       </CardHeader>
       <CardContent>
         <ul className="space-y-4">
-          {notices.map((notice) => {
+          {loading ? (
+            <li className="text-sm text-muted-foreground">Loading notices...</li>
+          ) : notices.length === 0 ? (
+            <li className="text-sm text-muted-foreground">No notices found</li>
+          ) : (
+            notices.map((notice) => {
             const config = NOTICE_TYPE_CONFIG[notice.noticeType] ?? {
               color: "bg-gray-500/15 text-gray-700",
               icon: <FileText className="h-4 w-4" />,
@@ -157,7 +165,8 @@ export function NoticesFeed() {
                 </div>
               </li>
             );
-          })}
+            })
+          )}
         </ul>
       </CardContent>
       <CardFooter>
