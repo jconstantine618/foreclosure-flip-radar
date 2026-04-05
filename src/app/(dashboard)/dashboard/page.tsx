@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { PipelineSummary } from "@/components/dashboard/pipeline-summary";
-import { RecentProperties } from "@/components/dashboard/recent-properties";
+import { RecentOpportunities } from "@/components/dashboard/recent-opportunities";
 
 interface DashboardData {
   totalOpportunities: number;
@@ -57,7 +57,7 @@ export default function DashboardPage() {
       <StatsCards stats={stats} />
       <div className="grid gap-6 md:grid-cols-2">
         <PipelineSummary pipeline={data?.pipeline ?? null} />
-        <RecentProperties />
+        <RecentOpportunities />
       </div>
     </div>
   );
