@@ -138,7 +138,20 @@ export class BatchDataPropertyProvider implements PropertyProvider {
           r.property?.sqft ??
           null;
 
-        // If BatchData didn't provide sale price, enrich from county records
+        // Fallback 1: Use BatchData assessed/estimated values if no sale price
+        if (salePrice === 0) {
+          salePrice =
+            r.assessment?.market?.marketTotalValue ??
+            r.assessment?.marketTotalValue ??
+            r.valuation?.estimatedValue ??
+            r.valuation?.value ??
+            r.assessment?.assessed?.assdTotalValue ??
+            r.tax?.marketValue ??
+            r.tax?.assessedValue ??
+            0;
+        }
+
+        // Fallback 2: Enrich from county records (Horry County ArcGIS)
         let countyData = null;
         if (salePrice === 0 && lat && lon) {
           countyData = await lookupParcelByCoords(lat, lon);
