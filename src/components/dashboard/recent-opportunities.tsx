@@ -163,6 +163,7 @@ export function RecentOpportunities() {
             No opportunities found
           </div>
         ) : (
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -218,6 +219,7 @@ export function RecentOpportunities() {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </CardContent>
       {!isLoading && !error && opportunities.length > 0 && (
