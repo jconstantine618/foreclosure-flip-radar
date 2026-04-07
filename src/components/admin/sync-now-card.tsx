@@ -51,25 +51,39 @@ export function SyncNowCard() {
     setError(null);
     setResults(null);
 
-    try {
-      const response = await fetch("/api/sync/providers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: "BATCHDATA",
-          counties: COUNTIES,
-          filters: {
-            distressStages: DISTRESS_STAGES,
-          },
-        }),
-      });
+    const accumulated: CountyResult[] = [];
 
-      if (!response.ok) {
-        throw new Error(`Sync failed: ${response.status} ${response.statusText}`);
+    try {
+      // Fire each county separately so each gets its own 300 s serverless budget
+      for (const county of COUNTIES) {
+        const response = await fetch("/api/sync/providers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: "BATCHDATA",
+            counties: [county],
+            filters: {
+              distressStages: DISTRESS_STAGES,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          accumulated.push({
+            county,
+            status: "FAILED",
+            recordsFound: 0,
+            recordsIngested: 0,
+          });
+        } else {
+          const data: SyncResponse = await response.json();
+          accumulated.push(...data.data.results);
+        }
+
+        // Update UI progressively after each county
+        setResults([...accumulated]);
       }
 
-      const data: SyncResponse = await response.json();
-      setResults(data.data.results);
       setLastSyncTime(new Date().toLocaleString());
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred during sync");

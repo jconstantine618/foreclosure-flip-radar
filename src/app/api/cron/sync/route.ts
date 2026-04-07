@@ -8,6 +8,9 @@ import { logger } from '@/lib/logger';
 // Protected by CRON_SECRET to prevent unauthorized access.
 // ---------------------------------------------------------------------------
 
+// Vercel Pro: allow up to 300 seconds per invocation
+export const maxDuration = 300;
+
 const MONITORED_COUNTIES = ['Greenville', 'Horry', 'Georgetown'];
 
 /** Only pull distressed properties — this is a foreclosure radar, not an MLS. */
@@ -44,41 +47,51 @@ export async function GET(req: NextRequest) {
       'Cron: starting incremental BatchData sync',
     );
 
-    const response = await fetch(syncUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'BATCHDATA',
-        counties: MONITORED_COUNTIES,
-        filters: {
-          distressStages: DISTRESS_STAGES,
-        },
-      }),
-    });
+    // Fire each county as a separate request so each gets its own 300 s budget.
+    const allResults: Record<string, unknown>[] = [];
 
-    if (!response.ok) {
-      const text = await response.text();
-      logger.error(
-        { status: response.status, body: text },
-        'Cron: sync endpoint returned error',
-      );
-      return NextResponse.json(
-        { error: 'Sync endpoint error', status: response.status, body: text },
-        { status: 502 },
-      );
+    for (const county of MONITORED_COUNTIES) {
+      try {
+        logger.info({ county }, 'Cron: syncing county');
+
+        const response = await fetch(syncUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'BATCHDATA',
+            counties: [county],
+            filters: {
+              distressStages: DISTRESS_STAGES,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          logger.error(
+            { county, status: response.status, body: text },
+            'Cron: sync failed for county',
+          );
+          allResults.push({ county, status: 'ERROR', error: text });
+        } else {
+          const data = await response.json();
+          const countyResults = data?.data?.results ?? [];
+          allResults.push(...countyResults);
+          logger.info({ county, results: countyResults }, 'Cron: county sync done');
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ county, err: msg }, 'Cron: county sync threw');
+        allResults.push({ county, status: 'ERROR', error: msg });
+      }
     }
 
-    const data = await response.json();
-
-    logger.info(
-      { results: data?.data?.results },
-      'Cron: incremental sync completed',
-    );
+    logger.info({ results: allResults }, 'Cron: incremental sync completed');
 
     return NextResponse.json({
       ok: true,
       message: 'Incremental sync completed',
-      results: data?.data?.results,
+      results: allResults,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
