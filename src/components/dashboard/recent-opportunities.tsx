@@ -21,7 +21,14 @@ import {
 } from "@/components/ui/table";
 import { ArrowRight, Eye, Loader2 } from "lucide-react";
 
-type DistressStageEnum = "PRE_FORECLOSURE" | "AUCTION" | "REO" | "TAX_LIEN" | "LIS_PENDENS" | "BANK_OWNED" | "OTHER";
+type DistressStageEnum =
+  | "PRE_FORECLOSURE"
+  | "AUCTION"
+  | "REO"
+  | "TAX_LIEN"
+  | "LIS_PENDENS"
+  | "BANK_OWNED"
+  | "OTHER";
 
 interface ApiProperty {
   streetAddress: string;
@@ -30,8 +37,8 @@ interface ApiProperty {
   state: string;
   zipCode: string;
   propertyType: string;
-  estimatedValue: number;
-  equityEstimate: number;
+  estimatedValue: number | null;
+  equityEstimate: number | null;
 }
 
 interface ApiOpportunity {
@@ -40,7 +47,7 @@ interface ApiOpportunity {
   flipScore: number;
   distressStage: DistressStageEnum;
   pipelineStage: string;
-  estimatedARV: number;
+  estimatedARV: number | null;
   estimatedRehabCost: number;
   maxAllowableOffer: number;
   auctionDate: string | null;
@@ -55,13 +62,15 @@ interface Opportunity {
   county: string;
   score: number;
   stage: DistressStageEnum;
-  estimatedValue: number;
-  equityPercent: number;
+  estimatedValue: number | null;
+  equityPercent: number | null;
   auctionDate: string | null;
   createdAt: string;
 }
 
-function getScoreBadgeVariant(score: number): "success" | "warning" | "destructive" {
+function getScoreBadgeVariant(
+  score: number
+): "success" | "warning" | "destructive" {
   if (score > 75) return "success";
   if (score >= 50) return "warning";
   return "destructive";
@@ -95,7 +104,10 @@ function formatStageLabel(stage: DistressStageEnum): string {
 function mapApiOpportunity(opp: ApiOpportunity): Opportunity {
   const { property } = opp;
   const address = `${property.streetAddress}, ${property.city}, ${property.state} ${property.zipCode}`;
-  const equityPercent = Math.round((property.equityEstimate / property.estimatedValue) * 100);
+  const equityPercent =
+    property.equityEstimate != null && property.estimatedValue != null && property.estimatedValue > 0
+      ? Math.round((property.equityEstimate / property.estimatedValue) * 100)
+      : null;
 
   return {
     id: opp.id,
@@ -120,15 +132,12 @@ export function RecentOpportunities() {
       try {
         setIsLoading(true);
         setError(null);
-
         const response = await fetch(
           "/api/opportunities?limit=10&sort=createdAt&order=desc"
         );
-
         if (!response.ok) {
           throw new Error(`Failed to fetch opportunities: ${response.status}`);
         }
-
         const data = await response.json();
         const mapped = (data.data as ApiOpportunity[]).map(mapApiOpportunity);
         setOpportunities(mapped);
@@ -139,7 +148,6 @@ export function RecentOpportunities() {
         setIsLoading(false);
       }
     };
-
     fetchOpportunities();
   }, []);
 
@@ -152,7 +160,9 @@ export function RecentOpportunities() {
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-muted-foreground">Loading opportunities...</span>
+            <span className="ml-2 text-muted-foreground">
+              Loading opportunities...
+            </span>
           </div>
         ) : error ? (
           <div className="py-8 text-center text-sm text-destructive">
@@ -164,61 +174,68 @@ export function RecentOpportunities() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Address</TableHead>
-                <TableHead>County</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead className="text-right">Est. Value</TableHead>
-                <TableHead className="text-right">Equity</TableHead>
-                <TableHead>Auction Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {opportunities.map((opp) => (
-                <TableRow key={opp.id}>
-                  <TableCell className="max-w-[200px] truncate font-medium">
-                    {opp.address}
-                  </TableCell>
-                  <TableCell>{opp.county}</TableCell>
-                  <TableCell>
-                    <Badge variant={getScoreBadgeVariant(opp.score)}>
-                      {opp.score}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={STAGE_COLORS[opp.stage] || "bg-gray-500/15 text-gray-700"}
-                      variant="outline"
-                    >
-                      {formatStageLabel(opp.stage)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(opp.estimatedValue)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {opp.equityPercent}%
-                  </TableCell>
-                  <TableCell>
-                    {opp.auctionDate
-                      ? new Date(opp.auctionDate).toLocaleDateString()
-                      : "\u2014"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" asChild>
-                      <Link href={`/opportunities/${opp.id}`}>
-                        <Eye className="h-4 w-4" />
-                      </Link>
-                    </Button>
-                  </TableCell>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Address</TableHead>
+                  <TableHead>County</TableHead>
+                  <TableHead>Score</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead className="text-right">Est. Value</TableHead>
+                  <TableHead className="text-right">Equity</TableHead>
+                  <TableHead>Auction Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {opportunities.map((opp) => (
+                  <TableRow key={opp.id}>
+                    <TableCell className="max-w-[200px] truncate font-medium">
+                      {opp.address}
+                    </TableCell>
+                    <TableCell>{opp.county}</TableCell>
+                    <TableCell>
+                      <Badge variant={getScoreBadgeVariant(opp.score)}>
+                        {opp.score}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        className={
+                          STAGE_COLORS[opp.stage] ||
+                          "bg-gray-500/15 text-gray-700"
+                        }
+                        variant="outline"
+                      >
+                        {formatStageLabel(opp.stage)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {opp.estimatedValue != null && opp.estimatedValue > 0
+                        ? formatCurrency(opp.estimatedValue)
+                        : "\u2014"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {opp.equityPercent != null
+                        ? `${opp.equityPercent}%`
+                        : "\u2014"}
+                    </TableCell>
+                    <TableCell>
+                      {opp.auctionDate
+                        ? new Date(opp.auctionDate).toLocaleDateString()
+                        : "\u2014"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" asChild>
+                        <Link href={`/opportunities/${opp.id}`}>
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         )}
       </CardContent>
