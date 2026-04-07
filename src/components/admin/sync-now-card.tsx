@@ -29,6 +29,17 @@ interface SyncResponse {
 
 const COUNTIES = ["Greenville", "Horry", "Georgetown"];
 
+/** Only pull distressed properties — this is a foreclosure radar, not an MLS. */
+const DISTRESS_STAGES = [
+  "PRE_FORECLOSURE",
+  "NOTICE_OF_DEFAULT",
+  "NOTICE_OF_SALE",
+  "AUCTION_SCHEDULED",
+  "TAX_LIEN",
+  "REO",
+  "BANK_OWNED",
+];
+
 export function SyncNowCard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [results, setResults] = useState<CountyResult[] | null>(null);
@@ -40,53 +51,25 @@ export function SyncNowCard() {
     setError(null);
     setResults(null);
 
-    const allResults: CountyResult[] = [];
-
     try {
-      // Sync one county at a time to stay within function timeout limits
-      for (const county of COUNTIES) {
-        try {
-          const response = await fetch("/api/sync/providers", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              provider: "BATCHDATA",
-              counties: [county],
-            }),
-          });
+      const response = await fetch("/api/sync/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "BATCHDATA",
+          counties: COUNTIES,
+          filters: {
+            distressStages: DISTRESS_STAGES,
+          },
+        }),
+      });
 
-          if (!response.ok) {
-            allResults.push({
-              county,
-              status: "FAILED",
-              recordsFound: 0,
-              recordsIngested: 0,
-            });
-          } else {
-            const data: SyncResponse = await response.json();
-            const countyResult = data.data.results?.[0];
-            allResults.push(
-              countyResult ?? {
-                county,
-                status: "COMPLETED",
-                recordsFound: 0,
-                recordsIngested: 0,
-              },
-            );
-          }
-        } catch {
-          allResults.push({
-            county,
-            status: "FAILED",
-            recordsFound: 0,
-            recordsIngested: 0,
-          });
-        }
-
-        // Update UI after each county completes
-        setResults([...allResults]);
+      if (!response.ok) {
+        throw new Error(`Sync failed: ${response.status} ${response.statusText}`);
       }
 
+      const data: SyncResponse = await response.json();
+      setResults(data.data.results);
       setLastSyncTime(new Date().toLocaleString());
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred during sync");
