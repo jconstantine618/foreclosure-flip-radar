@@ -24,7 +24,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetch("/api/dashboard/stats")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load dashboard stats: ${res.status}`);
+        return res.json();
+      })
       .then((json) => {
         if (json.data) setData(json.data);
       })
