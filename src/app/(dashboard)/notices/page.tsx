@@ -141,7 +141,7 @@ export default function NoticesPage() {
         );
         if (!response.ok) throw new Error("Failed to fetch opportunities");
         const data = await response.json();
-        const opportunities: Opportunity[] = data.opportunities || [];
+        const opportunities: Opportunity[] = data.data || data.opportunities || [];
 
         // Map opportunities to notices
         const mappedNotices: Notice[] = opportunities.map((opp) => {
