@@ -10,16 +10,16 @@ import { IngestionService } from '@/lib/services/ingestion';
 // ---------------------------------------------------------------------------
 
 /** Max records per BatchData API page (their hard limit is 1000). */
-const PAGE_SIZE = 500;
+const PAGE_SIZE = 100;
 
-/** Safety cap — never ingest more than this many records per county per sync. */
+/** Safety cap â never ingest more than this many records per county per sync. */
 const MAX_RECORDS_PER_COUNTY = 10_000;
 
 /** Default lookback window for the very first sync (30 days). */
 const INITIAL_LOOKBACK_DAYS = 30;
 
 // ---------------------------------------------------------------------------
-// POST /api/sync/providers – Trigger an incremental provider sync
+// POST /api/sync/providers â Trigger an incremental provider sync
 // ---------------------------------------------------------------------------
 
 const TriggerSyncSchema = z.object({
@@ -259,7 +259,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/sync/providers?jobId=... – Check job status
+// GET /api/sync/providers?jobId=... â Check job status
 // ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
