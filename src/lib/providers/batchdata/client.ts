@@ -436,10 +436,27 @@ export class BatchDataClient {
       }
     }
 
+    // Date range filtering — BatchData uses startcalendardate / endcalendardate
+    if (params.dateMin) {
+      const d = typeof params.dateMin === "string" ? new Date(params.dateMin) : params.dateMin;
+      searchCriteria.startcalendardate = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+    }
+    if (params.dateMax) {
+      const d = typeof params.dateMax === "string" ? new Date(params.dateMax) : params.dateMax;
+      searchCriteria.endcalendardate = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+    }
+
     const take = params.limit ?? 25;
     const skip = ((params.page ?? 1) - 1) * take;
     options.skip = skip;
     options.take = take;
+
+    // Sort order — default to newest first when date filtering is active
+    if (params.orderBy) {
+      options.orderby = params.orderBy;
+    } else if (params.dateMin || params.dateMax) {
+      options.orderby = "calendardate";
+    }
 
     return { searchCriteria, options };
   }
