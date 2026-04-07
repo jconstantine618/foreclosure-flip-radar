@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+import { SyncNowCard } from "@/components/admin/sync-now-card";
   Table,
   TableBody,
   TableCell,
@@ -103,7 +104,7 @@ const jobHistory = [
   { id: "job_u1v2w3x4", type: "Ingest", provider: "ATTOM", status: "Failed", records: 0, duration: "0m 02s", started: "2026-03-31 11:00", completed: "2026-03-31 11:00" },
   { id: "job_y5z6a7b8", type: "SkipTrace", provider: "BatchData", status: "Completed", records: 12, duration: "2m 05s", started: "2026-03-31 10:30", completed: "2026-03-31 10:32" },
   { id: "job_c9d0e1f2", type: "Ingest", provider: "PublicNotices", status: "Completed", records: 31, duration: "2m 20s", started: "2026-03-31 09:00", completed: "2026-03-31 09:02" },
-  { id: "job_g3h4i5j6", type: "ScoreCalc", provider: "Internal", status: "Running", records: 15, duration: "0m 22s", started: "2026-03-31 14:10", completed: "—" },
+  { id: "job_g3h4i5j6", type: "ScoreCalc", provider: "Internal", status: "Running", records: 15, duration: "0m 22s", started: "2026-03-31 14:10", completed: "â" },
   { id: "job_k7l8m9n0", type: "Digest", provider: "Internal", status: "Completed", records: 1, duration: "0m 08s", started: "2026-03-31 08:00", completed: "2026-03-31 08:00" },
   { id: "job_o1p2q3r4", type: "Ingest", provider: "BatchData", status: "Completed", records: 14, duration: "1m 05s", started: "2026-03-30 14:00", completed: "2026-03-30 14:01" },
   { id: "job_s5t6u7v8", type: "Alert", provider: "Internal", status: "Completed", records: 3, duration: "0m 06s", started: "2026-03-30 14:02", completed: "2026-03-30 14:02" },
@@ -116,31 +117,31 @@ const ingestionLogs = [
   { time: "2026-03-31 14:04:12", level: "INFO", message: "Alert dispatched: HOT_LEAD to admin@flipradar.com", source: "AlertService" },
   { time: "2026-03-31 14:03:58", level: "INFO", message: "Flip score calculated: 82 for property 1042 Main St", source: "ScoreEngine" },
   { time: "2026-03-31 14:03:45", level: "INFO", message: "Flip score calculated: 67 for property 309 Elm Ave", source: "ScoreEngine" },
-  { time: "2026-03-31 14:03:30", level: "WARN", message: "ARV estimate low confidence (0.72) for 88 Oak Dr — using fallback comps", source: "ScoreEngine" },
+  { time: "2026-03-31 14:03:30", level: "WARN", message: "ARV estimate low confidence (0.72) for 88 Oak Dr â using fallback comps", source: "ScoreEngine" },
   { time: "2026-03-31 14:03:15", level: "INFO", message: "Score calculation batch started: 41 properties", source: "ScoreEngine" },
-  { time: "2026-03-31 14:02:50", level: "INFO", message: "Matched property to existing record (confidence: 0.95) — 1042 Main St", source: "Dedup" },
+  { time: "2026-03-31 14:02:50", level: "INFO", message: "Matched property to existing record (confidence: 0.95) â 1042 Main St", source: "Dedup" },
   { time: "2026-03-31 14:02:35", level: "INFO", message: "New property ingested: 309 Elm Ave, Greenville, SC", source: "Ingestion" },
-  { time: "2026-03-31 14:02:20", level: "ERROR", message: "Failed to geocode address: 99 Unknown Rd — skipping", source: "Geocoder" },
-  { time: "2026-03-31 14:02:05", level: "ERROR", message: "BatchData returned 422 for parcel ID X-9999 — invalid format", source: "BatchData" },
+  { time: "2026-03-31 14:02:20", level: "ERROR", message: "Failed to geocode address: 99 Unknown Rd â skipping", source: "Geocoder" },
+  { time: "2026-03-31 14:02:05", level: "ERROR", message: "BatchData returned 422 for parcel ID X-9999 â invalid format", source: "BatchData" },
   { time: "2026-03-31 14:01:50", level: "INFO", message: "Fetched 23 properties from Greenville MIE adapter", source: "BatchData" },
   { time: "2026-03-31 14:00:15", level: "INFO", message: "BatchData sync started for Greenville", source: "Scheduler" },
   { time: "2026-03-31 13:01:30", level: "INFO", message: "Horry MIE sync completed: 18 fetched, 17 processed, 1 error", source: "BatchData" },
   { time: "2026-03-31 13:00:10", level: "INFO", message: "BatchData sync started for Horry", source: "Scheduler" },
-  { time: "2026-03-31 12:00:05", level: "ERROR", message: "BatchData API rate limit exceeded — retrying in 60s", source: "BatchData" },
-  { time: "2026-03-31 11:00:03", level: "ERROR", message: "ATTOM connection refused — provider not configured", source: "ATTOM" },
+  { time: "2026-03-31 12:00:05", level: "ERROR", message: "BatchData API rate limit exceeded â retrying in 60s", source: "BatchData" },
+  { time: "2026-03-31 11:00:03", level: "ERROR", message: "ATTOM connection refused â provider not configured", source: "ATTOM" },
   { time: "2026-03-31 10:32:00", level: "INFO", message: "Skip trace completed: 12 contacts enriched", source: "SkipTrace" },
   { time: "2026-03-31 10:30:05", level: "INFO", message: "Skip trace batch started: 12 properties", source: "SkipTrace" },
   { time: "2026-03-31 09:02:10", level: "WARN", message: "Public notices parser found 3 entries with missing sale dates", source: "PublicNotices" },
-  { time: "2026-03-31 09:00:15", level: "INFO", message: "SC Public Notices scrape started — statewide", source: "Scheduler" },
+  { time: "2026-03-31 09:00:15", level: "INFO", message: "SC Public Notices scrape started â statewide", source: "Scheduler" },
   { time: "2026-03-31 08:00:05", level: "INFO", message: "Daily digest generated and queued for delivery", source: "DigestService" },
 ];
 
 const alertTemplates = [
   { type: "NEW_OPPORTUNITY", subject: "New foreclosure opportunity: {{address}} in {{county}}", status: "Active" },
-  { type: "HOT_LEAD", subject: "HOT LEAD: {{address}} — Flip Score {{score}}/100", status: "Active" },
+  { type: "HOT_LEAD", subject: "HOT LEAD: {{address}} â Flip Score {{score}}/100", status: "Active" },
   { type: "AUCTION_APPROACHING", subject: "Auction in {{days_until}} days: {{address}}", status: "Active" },
   { type: "STATUS_CHANGED", subject: "Status update: {{address}} changed to {{new_status}}", status: "Active" },
-  { type: "DAILY_DIGEST", subject: "Foreclosure Flip Radar — Daily Digest ({{date}})", status: "Active" },
+  { type: "DAILY_DIGEST", subject: "Foreclosure Flip Radar â Daily Digest ({{date}})", status: "Active" },
 ];
 
 const defaultWeights = {
@@ -292,9 +293,11 @@ export default function AdminPage() {
         </TabsList>
 
         {/* ---------------------------------------------------------------- */}
-        {/* TAB 1 — Providers                                                */}
+        {/* TAB 1 â Providers                                                */}
         {/* ---------------------------------------------------------------- */}
         <TabsContent value="providers" className="space-y-6 mt-6">
+            <SyncNowCard />
+
           <div className="grid gap-6 md:grid-cols-2">
             {/* BatchData */}
             <Card>
@@ -310,7 +313,7 @@ export default function AdminPage() {
                   <Input
                     id="bd-api-key"
                     type="password"
-                    value="••••••••••••abc123"
+                    value="â¢â¢â¢â¢â¢â¢â¢â¢â¢â¢â¢â¢abc123"
                     readOnly
                   />
                 </div>
@@ -358,7 +361,7 @@ export default function AdminPage() {
                 </div>
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
                   <span>Last sync: Never</span>
-                  <span>Rate limit: —</span>
+                  <span>Rate limit: â</span>
                 </div>
                 <Button variant="outline" className="w-full gap-2">
                   <RefreshCw className="h-4 w-4" />
@@ -424,7 +427,7 @@ export default function AdminPage() {
         </TabsContent>
 
         {/* ---------------------------------------------------------------- */}
-        {/* TAB 2 — County Adapters                                          */}
+        {/* TAB 2 â County Adapters                                          */}
         {/* ---------------------------------------------------------------- */}
         <TabsContent value="adapters" className="mt-6">
           <Card>
@@ -472,7 +475,7 @@ export default function AdminPage() {
         </TabsContent>
 
         {/* ---------------------------------------------------------------- */}
-        {/* TAB 3 — Job History                                              */}
+        {/* TAB 3 â Job History                                              */}
         {/* ---------------------------------------------------------------- */}
         <TabsContent value="jobs" className="space-y-4 mt-6">
           <div className="flex items-center gap-3">
@@ -527,7 +530,7 @@ export default function AdminPage() {
         </TabsContent>
 
         {/* ---------------------------------------------------------------- */}
-        {/* TAB 4 — Ingestion Logs                                           */}
+        {/* TAB 4 â Ingestion Logs                                           */}
         {/* ---------------------------------------------------------------- */}
         <TabsContent value="logs" className="mt-6">
           <Card>
@@ -559,7 +562,7 @@ export default function AdminPage() {
         </TabsContent>
 
         {/* ---------------------------------------------------------------- */}
-        {/* TAB 5 — Score Weights                                            */}
+        {/* TAB 5 â Score Weights                                            */}
         {/* ---------------------------------------------------------------- */}
         <TabsContent value="weights" className="space-y-6 mt-6">
           <Card>
@@ -643,7 +646,7 @@ export default function AdminPage() {
         </TabsContent>
 
         {/* ---------------------------------------------------------------- */}
-        {/* TAB 6 — Alert Templates                                          */}
+        {/* TAB 6 â Alert Templates                                          */}
         {/* ---------------------------------------------------------------- */}
         <TabsContent value="alerts" className="mt-6">
           <Card>
@@ -685,7 +688,7 @@ export default function AdminPage() {
         </TabsContent>
 
         {/* ---------------------------------------------------------------- */}
-        {/* TAB 7 — Feature Flags                                            */}
+        {/* TAB 7 â Feature Flags                                            */}
         {/* ---------------------------------------------------------------- */}
         <TabsContent value="flags" className="space-y-6 mt-6">
           <Card>
