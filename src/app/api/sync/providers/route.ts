@@ -6,20 +6,26 @@ import { providerRegistry, initializeProviders } from '@/lib/providers';
 import { IngestionService } from '@/lib/services/ingestion';
 
 // ---------------------------------------------------------------------------
+// Vercel route config — allow up to 300 s on Pro plan (Hobby caps at 60 s).
+// ---------------------------------------------------------------------------
+
+export const maxDuration = 300;
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /** Max records per BatchData API page (their hard limit is 1000). */
 const PAGE_SIZE = 100;
 
-/** Safety cap â never ingest more than this many records per county per sync. */
+/** Safety cap Ã¢ÂÂ never ingest more than this many records per county per sync. */
 const MAX_RECORDS_PER_COUNTY = 10_000;
 
 /** Default lookback window for the very first sync (30 days). */
 const INITIAL_LOOKBACK_DAYS = 30;
 
 // ---------------------------------------------------------------------------
-// POST /api/sync/providers â Trigger an incremental provider sync
+// POST /api/sync/providers Ã¢ÂÂ Trigger an incremental provider sync
 // ---------------------------------------------------------------------------
 
 const TriggerSyncSchema = z.object({
@@ -259,7 +265,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/sync/providers?jobId=... â Check job status
+// GET /api/sync/providers?jobId=... Ã¢ÂÂ Check job status
 // ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
