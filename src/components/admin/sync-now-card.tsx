@@ -40,22 +40,53 @@ export function SyncNowCard() {
     setError(null);
     setResults(null);
 
-    try {
-      const response = await fetch("/api/sync/providers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: "BATCHDATA",
-          counties: COUNTIES,
-        }),
-      });
+    const allResults: CountyResult[] = [];
 
-      if (!response.ok) {
-        throw new Error(`Sync failed: ${response.status} ${response.statusText}`);
+    try {
+      // Sync one county at a time to stay within function timeout limits
+      for (const county of COUNTIES) {
+        try {
+          const response = await fetch("/api/sync/providers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              provider: "BATCHDATA",
+              counties: [county],
+            }),
+          });
+
+          if (!response.ok) {
+            allResults.push({
+              county,
+              status: "FAILED",
+              recordsFound: 0,
+              recordsIngested: 0,
+            });
+          } else {
+            const data: SyncResponse = await response.json();
+            const countyResult = data.data.results?.[0];
+            allResults.push(
+              countyResult ?? {
+                county,
+                status: "COMPLETED",
+                recordsFound: 0,
+                recordsIngested: 0,
+              },
+            );
+          }
+        } catch {
+          allResults.push({
+            county,
+            status: "FAILED",
+            recordsFound: 0,
+            recordsIngested: 0,
+          });
+        }
+
+        // Update UI after each county completes
+        setResults([...allResults]);
       }
 
-      const data: SyncResponse = await response.json();
-      setResults(data.data.results);
       setLastSyncTime(new Date().toLocaleString());
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred during sync");
