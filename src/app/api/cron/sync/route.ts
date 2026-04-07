@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 
+// Vercel route config — cron calls sync endpoint which needs extended time.
+export const maxDuration = 300;
+
 // ---------------------------------------------------------------------------
-// GET /api/cron/sync – Vercel Cron Job (every 6 hours)
+// GET /api/cron/sync â Vercel Cron Job (every 6 hours)
 //
 // Triggers incremental BatchData sync for all monitored counties.
 // Protected by CRON_SECRET to prevent unauthorized access.
