@@ -5,27 +5,63 @@ import { logger } from '@/lib/logger';
 import { providerRegistry, initializeProviders } from '@/lib/providers';
 import { IngestionService } from '@/lib/services/ingestion';
 
-// ---------------------------------------------------------------------------
-// Vercel route config — allow up to 300 s on Pro plan (Hobby caps at 60 s).
-// ---------------------------------------------------------------------------
-
+// Vercel Pro: allow up to 300 seconds per invocation
 export const maxDuration = 300;
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Max records per BatchData API page (their hard limit is 1000). */
+/** Max records per BatchData API page (their hard limit is 100). */
 const PAGE_SIZE = 100;
 
-/** Safety cap Ã¢ÂÂ never ingest more than this many records per county per sync. */
+/** Safety cap — never ingest more than this many records per county per sync. */
 const MAX_RECORDS_PER_COUNTY = 10_000;
 
 /** Default lookback window for the very first sync (30 days). */
 const INITIAL_LOOKBACK_DAYS = 30;
 
+/** Jobs stuck in RUNNING/PENDING longer than this are marked FAILED (self-healing). */
+const STALE_JOB_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
 // ---------------------------------------------------------------------------
-// POST /api/sync/providers Ã¢ÂÂ Trigger an incremental provider sync
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Mark jobs stuck in RUNNING or PENDING for more than 10 minutes as FAILED.
+ * This self-heals after Vercel kills a function at the 300s timeout boundary.
+ */
+async function cleanupStaleJobs() {
+  const cutoff = new Date(Date.now() - STALE_JOB_THRESHOLD_MS);
+
+  const staleRunning = await prisma.providerSyncJob.updateMany({
+    where: { status: 'RUNNING', startedAt: { lt: cutoff } },
+    data: {
+      status: 'FAILED',
+      errors: { set: ['Marked as FAILED: exceeded stale threshold (likely timeout)'] },
+      completedAt: new Date(),
+    },
+  });
+
+  const stalePending = await prisma.providerSyncJob.updateMany({
+    where: { status: 'PENDING', createdAt: { lt: cutoff } },
+    data: {
+      status: 'FAILED',
+      errors: { set: ['Marked as FAILED: never started (likely timeout)'] },
+      completedAt: new Date(),
+    },
+  });
+
+  if (staleRunning.count > 0 || stalePending.count > 0) {
+    logger.info(
+      `Cleaned up ${staleRunning.count} stale RUNNING + ${stalePending.count} stale PENDING jobs`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/sync/providers – Trigger an incremental provider sync
 // ---------------------------------------------------------------------------
 
 const TriggerSyncSchema = z.object({
@@ -41,8 +77,12 @@ const TriggerSyncSchema = z.object({
   /** Override: force a full sync from this date instead of using last-sync. */
   since: z.string().datetime().optional(),
 });
+
 export async function POST(req: NextRequest) {
   try {
+    // Auto-cleanup stale jobs from previous timed-out runs
+    await cleanupStaleJobs();
+
     const body = await req.json();
     const parsed = TriggerSyncSchema.safeParse(body);
 
@@ -180,10 +220,26 @@ export async function POST(req: NextRequest) {
           if (properties.length < PAGE_SIZE) break;
 
           page++;
+
+          // Incrementally update job so a Vercel timeout doesn't lose progress.
+          // If the function is killed during the *next* page fetch, this job is
+          // already marked COMPLETED with a valid completedAt for incremental sync.
+          await prisma.providerSyncJob.update({
+            where: { id: job.id },
+            data: {
+              status: 'COMPLETED',
+              recordsFound: totalFound,
+              recordsProcessed: totalIngested,
+              errors: errors.length > 0 ? errors : undefined,
+              completedAt: new Date(),
+              duration: Date.now() - startMs,
+            },
+          });
         }
 
         const durationMs = Date.now() - startMs;
 
+        // Final update with definitive counts
         await prisma.providerSyncJob.update({
           where: { id: job.id },
           data: {
@@ -265,7 +321,7 @@ export async function POST(req: NextRequest) {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/sync/providers?jobId=... Ã¢ÂÂ Check job status
+// GET /api/sync/providers?jobId=... – Check job status
 // ---------------------------------------------------------------------------
 
 export async function GET(req: NextRequest) {
