@@ -6,7 +6,20 @@ import { providerRegistry, initializeProviders } from '@/lib/providers';
 import { IngestionService } from '@/lib/services/ingestion';
 
 // ---------------------------------------------------------------------------
-// POST /api/sync/providers – Trigger a provider sync for specified counties
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Max records per BatchData API page (their hard limit is 1000). */
+const PAGE_SIZE = 500;
+
+/** Safety cap — never ingest more than this many records per county per sync. */
+const MAX_RECORDS_PER_COUNTY = 10_000;
+
+/** Default lookback window for the very first sync (30 days). */
+const INITIAL_LOOKBACK_DAYS = 30;
+
+// ---------------------------------------------------------------------------
+// POST /api/sync/providers – Trigger an incremental provider sync
 // ---------------------------------------------------------------------------
 
 const TriggerSyncSchema = z.object({
@@ -19,8 +32,9 @@ const TriggerSyncSchema = z.object({
       maxPrice: z.number().optional(),
     })
     .optional(),
+  /** Override: force a full sync from this date instead of using last-sync. */
+  since: z.string().datetime().optional(),
 });
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -33,7 +47,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { provider, counties, filters } = parsed.data;
+    const { provider, counties, filters, since } = parsed.data;
 
     // Ensure providers are initialized
     initializeProviders();
@@ -49,22 +63,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const ingestion = new IngestionService();
+
     // Create a sync job record for each county
     const jobs = await Promise.all(
       counties.map((county) =>
         prisma.providerSyncJob.create({
-          data: {
-            provider,
-            county,
-            status: 'PENDING',
-          },
+          data: { provider, county, status: 'PENDING' },
         }),
       ),
     );
 
-    // Run sync for each county sequentially (Vercel kills async tasks after response)
-    const jobIds = jobs.map((j) => j.id);
-    const results: Array<{ jobId: string; county: string; status: string; recordsFound: number; recordsIngested?: number; ingestErrors?: number }> = [];
+    const results: Array<{
+      jobId: string;
+      county: string;
+      status: string;
+      recordsFound: number;
+      recordsIngested: number;
+      dateRange: { from: string; to: string };
+      pages: number;
+    }> = [];
 
     for (const job of jobs) {
       try {
@@ -75,31 +93,87 @@ export async function POST(req: NextRequest) {
 
         const startMs = Date.now();
 
-        const searchResults = await propertyProvider.searchProperties({
-          county: job.county ?? '',
-          distressStages: filters?.distressStages as any,
-          propertyTypes: filters?.propertyTypes as any,
-          maxPrice: filters?.maxPrice,
-          page: 1,
-          limit: 100,
-        });
+        // ---------------------------------------------------------------
+        // Determine the date window for this county
+        // ---------------------------------------------------------------
+        let dateMin: Date;
 
-        // ---- Ingest each property into the database ----
-        const ingestion = new IngestionService();
-        let ingested = 0;
-        let ingestErrors = 0;
+        if (since) {
+          // Explicit override from request body
+          dateMin = new Date(since);
+        } else {
+          // Look up the most recent COMPLETED sync for this provider+county
+          const lastSync = await prisma.providerSyncJob.findFirst({
+            where: {
+              provider,
+              county: job.county,
+              status: 'COMPLETED',
+              id: { not: job.id }, // exclude the current job
+            },
+            orderBy: { completedAt: 'desc' },
+            select: { completedAt: true },
+          });
 
-        for (const property of searchResults.properties) {
-          try {
-            await ingestion.ingestProperty(property, provider as any);
-            ingested++;
-          } catch (err) {
-            ingestErrors++;
-            logger.error(
-              { county: job.county, address: property.address, err: String(err) },
-              'sync: failed to ingest property',
-            );
+          if (lastSync?.completedAt) {
+            // Incremental: pull everything since last successful sync
+            dateMin = lastSync.completedAt;
+          } else {
+            // First-ever sync: pull last 30 days
+            dateMin = new Date();
+            dateMin.setDate(dateMin.getDate() - INITIAL_LOOKBACK_DAYS);
           }
+        }
+
+        const dateMax = new Date(); // now
+
+        // ---------------------------------------------------------------
+        // Paginated fetch + ingest loop
+        // ---------------------------------------------------------------
+        let page = 1;
+        let totalFound = 0;
+        let totalIngested = 0;
+        let totalErrors = 0;
+        const errors: string[] = [];
+
+        while (totalIngested < MAX_RECORDS_PER_COUNTY) {
+          const searchResults = await propertyProvider.searchProperties({
+            county: job.county ?? '',
+            distressStages: filters?.distressStages as any,
+            propertyTypes: filters?.propertyTypes as any,
+            maxPrice: filters?.maxPrice,
+            page,
+            limit: PAGE_SIZE,
+            dateMin: dateMin.toISOString(),
+            dateMax: dateMax.toISOString(),
+            orderBy: 'calendardate',
+          });
+
+          if (page === 1) {
+            totalFound = searchResults.total;
+          }
+
+          const properties = searchResults.properties;
+          if (properties.length === 0) break; // no more results
+
+          // Ingest each property through the full pipeline (dedup, score, etc.)
+          for (const prop of properties) {
+            try {
+              await ingestion.ingestProperty(
+                prop,
+                provider === 'BATCHDATA' ? 'BATCHDATA' : 'ATTOM',
+              );
+              totalIngested++;
+            } catch (ingErr) {
+              totalErrors++;
+              const msg = ingErr instanceof Error ? ingErr.message : String(ingErr);
+              if (errors.length < 10) errors.push(msg); // cap stored errors
+            }
+          }
+
+          // If we got fewer than PAGE_SIZE, we've reached the end
+          if (properties.length < PAGE_SIZE) break;
+
+          page++;
         }
 
         const durationMs = Date.now() - startMs;
@@ -108,8 +182,9 @@ export async function POST(req: NextRequest) {
           where: { id: job.id },
           data: {
             status: 'COMPLETED',
-            recordsFound: searchResults.total,
-            recordsProcessed: ingested,
+            recordsFound: totalFound,
+            recordsProcessed: totalIngested,
+            errors: errors.length > 0 ? errors : undefined,
             completedAt: new Date(),
             duration: durationMs,
           },
@@ -119,14 +194,28 @@ export async function POST(req: NextRequest) {
           jobId: job.id,
           county: job.county ?? '',
           status: 'COMPLETED',
-          recordsFound: searchResults.total,
-          recordsIngested: ingested,
-          ingestErrors,
+          recordsFound: totalFound,
+          recordsIngested: totalIngested,
+          dateRange: {
+            from: dateMin.toISOString(),
+            to: dateMax.toISOString(),
+          },
+          pages: page,
         });
 
         logger.info(
-          { jobId: job.id, county: job.county, provider, records: searchResults.total },
-          'Provider sync completed',
+          {
+            jobId: job.id,
+            county: job.county,
+            provider,
+            totalFound,
+            totalIngested,
+            totalErrors,
+            pages: page,
+            durationMs,
+            dateMin: dateMin.toISOString(),
+          },
+          'Incremental provider sync completed',
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -148,12 +237,15 @@ export async function POST(req: NextRequest) {
           county: job.county ?? '',
           status: 'FAILED',
           recordsFound: 0,
+          recordsIngested: 0,
+          dateRange: { from: '', to: '' },
+          pages: 0,
         });
       }
     }
 
     return NextResponse.json(
-      { data: { jobIds, results, status: 'COMPLETED' } },
+      { data: { jobIds: jobs.map((j) => j.id), results, status: 'COMPLETED' } },
       { status: 200 },
     );
   } catch (err) {
