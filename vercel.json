@@ -2,5 +2,11 @@
   "buildCommand": "npx prisma generate && next build",
   "framework": "nextjs",
   "installCommand": "npm install --legacy-peer-deps",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "0 */6 * * *"
+    }
+  ]
 }
