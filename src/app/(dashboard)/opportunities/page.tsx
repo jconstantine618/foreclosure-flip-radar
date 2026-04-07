@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import {
+import 
   Table,
   TableHeader,
   TableBody,
@@ -226,13 +226,15 @@ export default function OpportunitiesPage() {
         params.append("limit", String(PAGE_SIZE));
 
         const response = await fetch(`/api/opportunities?${params.toString()}`);
+      if (!response.ok) throw new Error(`Failed to fetch opportunities: ${response.status}`);
         const data: ApiResponse = await response.json();
 
-        setOpportunities(data.data);
-        setTotalCount(data.total);
+        setOpportunities(data.data ?? []);
+        setTotalCount(data.total ?? 0);
       } catch (error) {
         console.error("Failed to fetch opportunities:", error);
         setOpportunities([]);
+      setTotalCount(0);
       } finally {
         setIsLoading(false);
       }
