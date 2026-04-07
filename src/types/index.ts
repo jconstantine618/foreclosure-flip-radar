@@ -65,12 +65,18 @@ export const PropertySearchParamsSchema = z.object({
   ownerOccupied: z.boolean().optional(),
   absenteeOwner: z.boolean().optional(),
   page: z.number().int().min(1).default(1),
-  limit: z.number().int().min(1).max(100).default(25),
+  limit: z.number().int().min(1).max(500).default(25),
+  /** Only return records on or after this date (ISO string or Date). */
+  dateMin: z.union([z.string(), z.date()]).optional(),
+  /** Only return records on or before this date (ISO string or Date). */
+  dateMax: z.union([z.string(), z.date()]).optional(),
+  /** Sort field sent to the provider (e.g. "calendardate"). */
+  orderBy: z.string().optional(),
 });
 export type PropertySearchParams = z.infer<typeof PropertySearchParamsSchema>;
 
 // ---------------------------------------------------------------------------
-// NormalizedProperty – mirrors Prisma Property model shape
+// NormalizedProperty â mirrors Prisma Property model shape
 // ---------------------------------------------------------------------------
 
 export interface NormalizedProperty {
@@ -134,7 +140,7 @@ export interface NormalizedProperty {
 }
 
 // ---------------------------------------------------------------------------
-// NormalizedNotice – mirrors Prisma CountyNotice model
+// NormalizedNotice â mirrors Prisma CountyNotice model
 // ---------------------------------------------------------------------------
 
 export interface NormalizedNotice {
@@ -419,7 +425,7 @@ export interface AlertPayload {
 }
 
 // ---------------------------------------------------------------------------
-// MatchCandidate – for fuzzy notice-to-property matching
+// MatchCandidate â for fuzzy notice-to-property matching
 // ---------------------------------------------------------------------------
 
 export interface MatchCandidate {
