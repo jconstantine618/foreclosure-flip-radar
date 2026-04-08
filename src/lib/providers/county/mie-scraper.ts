@@ -49,10 +49,13 @@ export async function getGreenvilleSaleDates(): Promise<string[]> {
       dates.push(match[1]);
     }
 
-    // Filter to future dates only
+    // Include future dates AND recent past dates (within 60 days)
+    // Recent past sales help us update distress stages for properties
+    // that already went to auction
     const now = new Date();
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
     return dates
-      .filter((d) => new Date(d) >= now)
+      .filter((d) => new Date(d) >= sixtyDaysAgo)
       .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
   } catch {
     console.warn("[MIE-Greenville] Failed to fetch sale dates");
@@ -384,8 +387,9 @@ export async function scrapeGeorgetownSales(): Promise<MIESaleEntry[]> {
       }
 
       if (!saleDate) continue;
-      // Skip past dates
-      if (new Date(saleDate) < new Date(new Date().toISOString().split("T")[0])) continue;
+      // Skip dates older than 60 days (keep recent past for distress stage updates)
+      const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+      if (new Date(saleDate) < sixtyDaysAgo) continue;
 
       // Try to fetch the PDF and extract text
       // PDF parsing in a serverless env is limited — we'll extract what we can
