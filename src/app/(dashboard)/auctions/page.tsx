@@ -93,7 +93,7 @@ const STATUS_VARIANTS: Record<AuctionStatus, "default" | "success" | "warning" |
   Postponed: "secondary",
 };
 
-type DateRange = "this_week" | "next_2_weeks" | "this_month" | "all";
+type DateRange = "this_week" | "next_2_weeks" | "this_month" | "recent_past" | "all";
 
 type SortKey = keyof Pick<Auction, "date" | "address" | "county" | "type" | "minBid" | "deposit" | "status" | "score">;
 
@@ -105,6 +105,7 @@ function scoreColor(score: number) {
 
 function rowUrgencyClass(dateStr: string): string {
   const days = daysUntil(dateStr);
+  if (days < 0) return "bg-slate-50 opacity-75"; // past auction
   if (days < 3) return "bg-red-50";
   if (days < 7) return "bg-amber-50";
   return "";
@@ -183,16 +184,18 @@ export default function AuctionsPage() {
 
   const filtered = useMemo(() => {
     return auctions.filter((a) => {
-      // Always filter out past auctions
       const days = daysUntil(a.date);
-      if (days < 0) return false;
+      // Show auctions from up to 60 days ago through the future
+      // Recent past auctions are valuable for tracking outcomes
+      if (days < -60) return false;
 
       if (county !== "ALL" && a.county !== county) return false;
       if (auctionType !== "ALL" && a.type !== auctionType) return false;
       if (dateRange !== "all") {
-        if (dateRange === "this_week" && days > 7) return false;
-        if (dateRange === "next_2_weeks" && days > 14) return false;
-        if (dateRange === "this_month" && days > 30) return false;
+        if (dateRange === "recent_past" && days >= 0) return false;
+        if (dateRange === "this_week" && (days > 7 || days < 0)) return false;
+        if (dateRange === "next_2_weeks" && (days > 14 || days < 0)) return false;
+        if (dateRange === "this_month" && (days > 30 || days < 0)) return false;
       }
       return true;
     });
@@ -235,8 +238,8 @@ export default function AuctionsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Upcoming Auctions"
-        description="Track and manage upcoming foreclosure auctions across South Carolina counties."
+        title="Foreclosure Auctions"
+        description="Track foreclosure auctions across South Carolina counties — upcoming and recent sales."
         actions={
           <Button variant="outline" size="sm">
             <Download className="mr-1 h-4 w-4" />
@@ -274,6 +277,7 @@ export default function AuctionsPage() {
                   <SelectItem value="this_week">This Week</SelectItem>
                   <SelectItem value="next_2_weeks">Next 2 Weeks</SelectItem>
                   <SelectItem value="this_month">This Month</SelectItem>
+                  <SelectItem value="recent_past">Recent Past</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -310,6 +314,10 @@ export default function AuctionsPage() {
         <span className="flex items-center gap-1">
           <span className="inline-block h-3 w-3 rounded bg-amber-100 border border-amber-200" />
           Less than 7 days away
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-3 w-3 rounded bg-slate-100 border border-slate-200" />
+          Past auction
         </span>
       </div>
 
