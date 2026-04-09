@@ -99,11 +99,13 @@ const COUNTY_VARIANTS: Record<string, "outline" | "default"> = {
 };
 
 type DateRange = "this_week" | "next_2_weeks" | "this_month" | "all";
+type SaleStatus = "all" | "upcoming" | "past";
 
 export default function NoticesPage() {
   const [county, setCounty] = useState("ALL");
   const [noticeType, setNoticeType] = useState("ALL");
   const [dateRange, setDateRange] = useState<DateRange>("all");
+  const [saleStatus, setSaleStatus] = useState<SaleStatus>("upcoming");
   const [matchedOnly, setMatchedOnly] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -164,15 +166,21 @@ export default function NoticesPage() {
       if (county !== "ALL" && n.county !== county) return false;
       if (noticeType !== "ALL" && n.noticeType !== noticeType) return false;
       if (matchedOnly && !n.matchedPropertyId) return false;
+      // Sale status filter
+      if (saleStatus !== "all") {
+        const days = daysUntil(n.saleDate);
+        if (saleStatus === "upcoming" && days < 0) return false;
+        if (saleStatus === "past" && days >= 0) return false;
+      }
       if (dateRange !== "all") {
         const days = daysUntil(n.saleDate);
-        if (dateRange === "this_week" && days > 7) return false;
-        if (dateRange === "next_2_weeks" && days > 14) return false;
-        if (dateRange === "this_month" && days > 30) return false;
+        if (dateRange === "this_week" && (days < 0 || days > 7)) return false;
+        if (dateRange === "next_2_weeks" && (days < 0 || days > 14)) return false;
+        if (dateRange === "this_month" && (days < 0 || days > 30)) return false;
       }
       return true;
     });
-  }, [notices, county, noticeType, dateRange, matchedOnly]);
+  }, [notices, county, noticeType, dateRange, saleStatus, matchedOnly]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -187,6 +195,7 @@ export default function NoticesPage() {
     setCounty("ALL");
     setNoticeType("ALL");
     setDateRange("all");
+    setSaleStatus("upcoming");
     setMatchedOnly(false);
   }
 
@@ -233,6 +242,25 @@ export default function NoticesPage() {
                   <SelectItem value="Lis Pendens">Lis Pendens</SelectItem>
                   <SelectItem value="Tax Sale">Tax Sale</SelectItem>
                   <SelectItem value="Public Notice">Public Notice</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Sale Status
+              </label>
+              <Select
+                value={saleStatus}
+                onValueChange={(v) => setSaleStatus(v as SaleStatus)}
+              >
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Upcoming" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="upcoming">Upcoming</SelectItem>
+                  <SelectItem value="past">Past</SelectItem>
+                  <SelectItem value="all">All Dates</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -424,6 +452,10 @@ export default function NoticesPage() {
       {/* Summary */}
       <div className="text-sm text-muted-foreground">
         Showing {filtered.length} of {notices.length} notices
+        {" · "}
+        {notices.filter((n) => n.matchedPropertyId).length} matched
+        {" · "}
+        {notices.filter((n) => daysUntil(n.saleDate) >= 0).length} upcoming
       </div>
     </div>
   );
