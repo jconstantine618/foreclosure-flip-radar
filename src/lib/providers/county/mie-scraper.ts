@@ -69,6 +69,17 @@ export async function getGreenvilleSaleDates(): Promise<string[]> {
 /**
  * Scrape Greenville MIE sale entries for a specific date.
  * Fetches the search results page and parses structured listing entries.
+ *
+ * The site uses WP Adverts plugin with "wpa-result-item" blocks.
+ * Each block has 8 "wpa-detail-left" child divs:
+ *   [0] Status tags + sale date (e.g. "Def Waived In Order05/04/2026")
+ *   [1] Case number with link (e.g. "2022-CP-23-00650")
+ *   [2] Address + city separated by <br> (e.g. "310 Langley Road<br>Travelers Rest, SC")
+ *   [3] Law firm name
+ *   [4] Plaintiff (lender)
+ *   [5] Defendant (borrower)
+ *   [6] Bid amount (usually empty for upcoming sales)
+ *   [7] Bidder (usually empty for upcoming sales)
  */
 export async function scrapeGreenvilleSales(
   saleDate: string, // MM/DD/YYYY format
@@ -85,59 +96,117 @@ export async function scrapeGreenvilleSales(
     const [month, day, year] = saleDate.split("/");
     const isoDate = `${year}-${month}-${day}`;
 
-    // Find all advert entries by advert-id pattern
-    const entryRegex = /advert-id-\d+.*?(?=advert-id-\d+|<\/section)/gs;
     const entries: MIESaleEntry[] = [];
-    let entryMatch;
 
-    while ((entryMatch = entryRegex.exec(html)) !== null) {
-      const block = entryMatch[0];
-      // Strip HTML tags and get clean text lines
-      const text = block.replace(/<[^>]+>/g, "\n");
-      const lines = text
-        .split("\n")
-        .map((l) => l.trim())
-        .filter((l) =>
-          l.length > 1 &&
-          !l.startsWith("{") &&
-          !l.startsWith(".") &&
-          !l.includes("atw-") &&
-          !l.includes("padding") &&
-          !l.includes("border") &&
-          !l.includes("cursor") &&
-          !l.includes("display:")
-        );
+    // Split HTML into wpa-result-item blocks.
+    // Each entry is a <div class="wpa-result-item ..."> containing wpa-detail-left fields.
+    // Skip the first block (column headers: Date of Sale, Case Number, etc.)
+    const itemBlocks = html.split(/class="wpa-result-item\b/);
 
-      if (lines.length < 4) continue;
+    for (let i = 1; i < itemBlocks.length; i++) {
+      const block = itemBlocks[i];
 
-      // Parse the structured entry:
-      // Possible status line(s) first (Withdrawn, Def Waived, Continued, etc.)
-      // Then: sale date, case number, address, city+state, law firm, plaintiff, defendant
-      let idx = 0;
-      let status: string | null = null;
-
-      // Skip status lines until we find the date line (MM/DD/YYYY)
-      while (idx < lines.length && !/^\d{2}\/\d{2}\/\d{4}$/.test(lines[idx])) {
-        if (status) {
-          status += " " + lines[idx];
-        } else {
-          status = lines[idx];
-        }
-        idx++;
+      // Extract all wpa-detail-left field contents
+      const fieldRegex = /class="wpa-detail-left[^"]*"[^>]*>(.*?)<\/div>\s*(?=<div class="wpa-detail-left|<\/div>\s*<\/div>)/gs;
+      const rawFields: string[] = [];
+      let fieldMatch;
+      while ((fieldMatch = fieldRegex.exec(block)) !== null) {
+        rawFields.push(fieldMatch[1]);
       }
-      idx++; // skip date line
 
-      const caseNumber = lines[idx++] ?? "";
-      const street = lines[idx++] ?? "";
-      const cityStateLine = lines[idx++] ?? "";
-      const lawFirm = lines[idx++] ?? null;
-      const plaintiff = lines[idx++] ?? null;
-      const defendant = lines[idx++] ?? null;
+      // Fallback: if the nested regex didn't work, try extracting text between
+      // consecutive wpa-detail-left markers
+      if (rawFields.length < 3) {
+        const altParts = block.split(/class="wpa-detail-left[^"]*"[^>]*>/);
+        for (let j = 1; j < altParts.length; j++) {
+          // Take content up to the matching outer closing </div>, accounting for
+          // nested divs (e.g. field[0] has inner <div>status</div> children).
+          let depth = 1; // we're inside the opening wpa-detail-left div
+          let endIdx = 0;
+          const part = altParts[j];
+          const tagRegex = /<(\/?)div\b[^>]*>/gi;
+          let tagMatch;
+          while ((tagMatch = tagRegex.exec(part)) !== null) {
+            if (tagMatch[1] === "/") {
+              depth--;
+              if (depth === 0) {
+                endIdx = tagMatch.index;
+                break;
+              }
+            } else {
+              depth++;
+            }
+          }
+          const content = endIdx > 0 ? part.substring(0, endIdx) : part;
+          rawFields.push(content);
+        }
+      }
 
-      // Parse city/state from "Greenville, SC" format
-      const cityMatch = cityStateLine.match(/^(.+?),\s*([A-Z]{2})$/);
-      const city = cityMatch ? cityMatch[1].trim() : cityStateLine;
-      const state = cityMatch ? cityMatch[2] : "SC";
+      if (rawFields.length < 4) continue; // skip header row or malformed
+
+      // Helper: strip HTML tags and normalise whitespace
+      const stripHtml = (s: string) => s.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+      // Field 0: status + date — e.g. "Def Waived In Order05/04/2026"
+      const field0 = stripHtml(rawFields[0] ?? "");
+      const dateMatch = field0.match(/(\d{2}\/\d{2}\/\d{4})/);
+      let status: string | null = null;
+      if (dateMatch) {
+        const statusPart = field0.substring(0, dateMatch.index).trim();
+        if (statusPart) status = statusPart;
+      }
+
+      // Field 1: case number
+      const caseNumber = stripHtml(rawFields[1] ?? "").trim();
+
+      // Field 2: address + city separated by <br> tag — e.g. "310 Langley Road<br>Travelers Rest, SC"
+      const addrFieldRaw = rawFields[2] ?? "";
+      // Split on <br> / <br/> / <br /> to separate street from city line
+      const addrParts = addrFieldRaw.split(/<br\s*\/?\s*>/i).map((p) => stripHtml(p).trim()).filter(Boolean);
+
+      let street = "";
+      let city = "";
+      let state = "SC";
+
+      if (addrParts.length >= 2) {
+        // First part is street, second is "City, SC"
+        street = addrParts[0];
+        const cityLine = addrParts[1];
+        const cityStateMatch = cityLine.match(/^(.+?),\s*([A-Z]{2})\s*$/);
+        if (cityStateMatch) {
+          city = cityStateMatch[1].trim();
+          state = cityStateMatch[2];
+        } else {
+          city = cityLine;
+        }
+      } else {
+        // No <br> separator — try splitting "AddressCityName, SC" heuristically
+        const addrRaw = stripHtml(addrFieldRaw).trim();
+        street = addrRaw;
+        const cityStateMatch = addrRaw.match(/^(.+?)\s*,\s*([A-Z]{2})\s*$/);
+        if (cityStateMatch) {
+          const beforeState = cityStateMatch[1];
+          const splitMatch = beforeState.match(/^(.*[a-z.])([A-Z][A-Za-z\s]*)$/);
+          if (splitMatch) {
+            street = splitMatch[1].trim();
+            city = splitMatch[2].trim();
+          }
+          state = cityStateMatch[2];
+        }
+      }
+
+      // Field 3-5: law firm, plaintiff, defendant
+      const lawFirm = stripHtml(rawFields[3] ?? "").trim() || null;
+      const plaintiff = stripHtml(rawFields[4] ?? "").trim() || null;
+      const defendant = stripHtml(rawFields[5] ?? "").trim() || null;
+
+      // Field 6: bid amount (parse if present)
+      const bidRaw = stripHtml(rawFields[6] ?? "").trim();
+      let bidAmount: number | null = null;
+      if (bidRaw) {
+        const bidNum = parseFloat(bidRaw.replace(/[$,]/g, ""));
+        if (!isNaN(bidNum) && bidNum > 0) bidAmount = bidNum;
+      }
 
       if (caseNumber && street) {
         entries.push({
@@ -150,13 +219,14 @@ export async function scrapeGreenvilleSales(
           plaintiff,
           defendant,
           lawFirm,
-          bidAmount: null,
+          bidAmount,
           status,
           sourceUrl: url,
         });
       }
     }
 
+    console.log(`[MIE-Greenville] Found ${entries.length} entries for ${saleDate}`);
     return entries;
   } catch (err) {
     console.warn("[MIE-Greenville] Scrape failed:", err instanceof Error ? err.message : err);
