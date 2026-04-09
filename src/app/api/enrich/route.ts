@@ -10,6 +10,9 @@ import { lookupParcelByCoords } from "@/lib/providers/county/horry-arcgis";
 import { lookupGreenvilleParcel } from "@/lib/providers/county/greenville-arcgis";
 import { lookupGeorgetownParcel } from "@/lib/providers/county/georgetown-arcgis";
 import { lookupFloodZone } from "@/lib/providers/fema/nfhl";
+import { lookupEnhancedGreenville, lookupEnhancedHorry, lookupEnhancedGeorgetown } from "@/lib/providers/county/enhanced-gis";
+import { buildRecordLinks } from "@/lib/providers/public-records/url-builder";
+import { lookupCensusData } from "@/lib/providers/census/acs";
 import { FlipScoringEngine } from "@/lib/scoring";
 
 export const maxDuration = 300;
@@ -27,18 +30,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const targetCounty: string | undefined = body.county;
 
-    const enrichFlood = body.flood === true; // Pass { flood: true } to enrich flood data for all props
+    const enrichFlood = body.flood === true;   // { flood: true }
+    const enrichGIS = body.gis === true;       // { gis: true } — zoning, school, fire, utilities
+    const enrichLinks = body.links === true;   // { links: true } — public records URLs
+    const enrichCensus = body.census === true;  // { census: true } — ACS demographics
 
-    // Find properties missing valuations OR missing flood data
+    // Find properties missing valuations OR specific enrichment data
     const where: Record<string, unknown> = {
       latitude: { not: null },
       longitude: { not: null },
     };
     if (enrichFlood) {
-      // For flood enrichment: get all properties missing flood zone code
       where.floodZoneCode = null;
+    } else if (enrichGIS) {
+      where.zoningCode = null;
+    } else if (enrichCensus) {
+      where.censusTract = null;
+    } else if (enrichLinks) {
+      // For links, we need properties with county notices — handled below
     } else {
-      // Default: get properties missing valuations
       where.estimatedValue = null;
     }
     if (targetCounty) {
@@ -53,6 +63,9 @@ export async function POST(request: NextRequest) {
         county: true,
         latitude: true,
         longitude: true,
+        ownerName: true,
+        parcelNumber: true,
+        ...(enrichLinks ? { countyNotices: { select: { id: true, caseNumber: true, defendant: true } } } : {}),
       },
       take: 1000,
     });
@@ -129,6 +142,78 @@ export async function POST(request: NextRequest) {
           }
         } catch (floodErr) {
           console.warn(`[Enrich] 🌊 FEMA lookup failed for ${prop.streetAddress}:`, floodErr instanceof Error ? floodErr.message : floodErr);
+        }
+
+        // ── Enhanced County GIS (Zoning, Schools, Fire, Utilities) ──
+        if (enrichGIS) {
+          try {
+            let gisData = null;
+            if (county.toLowerCase() === "greenville") {
+              gisData = await lookupEnhancedGreenville(prop.latitude!, prop.longitude!);
+            } else if (county.toLowerCase() === "horry") {
+              gisData = await lookupEnhancedHorry(prop.latitude!, prop.longitude!);
+            } else if (county.toLowerCase() === "georgetown") {
+              gisData = await lookupEnhancedGeorgetown(prop.latitude!, prop.longitude!);
+            }
+            if (gisData) {
+              if (gisData.zoningCode) updateData.zoningCode = gisData.zoningCode;
+              if (gisData.zoningDescription) updateData.zoningDescription = gisData.zoningDescription;
+              if (gisData.schoolDistrict) updateData.schoolDistrict = gisData.schoolDistrict;
+              if (gisData.waterService) updateData.waterService = gisData.waterService;
+              if (gisData.sewerService) updateData.sewerService = gisData.sewerService;
+              if (gisData.fireDistrict) updateData.fireDistrict = gisData.fireDistrict;
+              console.log(`[Enrich] 🏛️ ${prop.streetAddress} — Zoning: ${gisData.zoningCode || "n/a"}, School: ${gisData.schoolDistrict || "n/a"}`);
+            }
+          } catch (gisErr) {
+            console.warn(`[Enrich] 🏛️ Enhanced GIS failed for ${prop.streetAddress}:`, gisErr instanceof Error ? gisErr.message : gisErr);
+          }
+        }
+
+        // ── Public Records Links ──
+        if (enrichLinks) {
+          try {
+            const notices = (prop as any).countyNotices ?? [];
+            const firstNotice = notices[0];
+            const links = buildRecordLinks({
+              county: prop.county,
+              caseNumber: firstNotice?.caseNumber ?? null,
+              ownerName: (prop as any).ownerName ?? firstNotice?.defendant ?? null,
+              parcelNumber: (prop as any).parcelNumber ?? null,
+              streetAddress: prop.streetAddress,
+            });
+            // Store links on the CountyNotice if we have one, otherwise on Property-level update
+            if (firstNotice && (links.courtIndexUrl || links.rodSearchUrl || links.taxPortalUrl)) {
+              await prisma.countyNotice.update({
+                where: { id: firstNotice.id },
+                data: {
+                  ...(links.courtIndexUrl ? { courtIndexUrl: links.courtIndexUrl } : {}),
+                  ...(links.rodSearchUrl ? { rodSearchUrl: links.rodSearchUrl } : {}),
+                  ...(links.taxPortalUrl ? { taxPortalUrl: links.taxPortalUrl } : {}),
+                },
+              });
+              console.log(`[Enrich] 🔗 ${prop.streetAddress} — court: ${links.courtIndexUrl ? "✓" : "—"}, rod: ${links.rodSearchUrl ? "✓" : "—"}, tax: ${links.taxPortalUrl ? "✓" : "—"}`);
+            }
+          } catch (linkErr) {
+            console.warn(`[Enrich] 🔗 Links failed for ${prop.streetAddress}:`, linkErr instanceof Error ? linkErr.message : linkErr);
+          }
+        }
+
+        // ── Census ACS Demographics ──
+        if (enrichCensus) {
+          try {
+            const censusData = await lookupCensusData(prop.latitude!, prop.longitude!);
+            if (censusData) {
+              updateData.censusTract = censusData.censusTract;
+              if (censusData.medianHouseholdIncome !== null) updateData.medianHouseholdIncome = censusData.medianHouseholdIncome;
+              if (censusData.medianHomeValue !== null) updateData.medianHomeValue = censusData.medianHomeValue;
+              if (censusData.vacancyRate !== null) updateData.vacancyRate = censusData.vacancyRate;
+              if (censusData.ownerOccupiedRate !== null) updateData.ownerOccupiedRate = censusData.ownerOccupiedRate;
+              if (censusData.medianGrossRent !== null) updateData.medianGrossRent = censusData.medianGrossRent;
+              console.log(`[Enrich] 📊 ${prop.streetAddress} — Tract: ${censusData.censusTract}, Income: $${censusData.medianHouseholdIncome?.toLocaleString() ?? "n/a"}`);
+            }
+          } catch (censusErr) {
+            console.warn(`[Enrich] 📊 Census failed for ${prop.streetAddress}:`, censusErr instanceof Error ? censusErr.message : censusErr);
+          }
         }
 
         if (Object.keys(updateData).length > 0) {

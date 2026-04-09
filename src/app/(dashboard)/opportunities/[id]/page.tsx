@@ -343,6 +343,27 @@ export default function OpportunityDetailPage() {
     baseFloodElevation: apiData.property?.baseFloodElevation || null,
     specialFloodHazard: apiData.property?.specialFloodHazard || false,
 
+    // enhanced GIS data (Phase 2)
+    zoningCode: apiData.property?.zoningCode || null,
+    zoningDescription: apiData.property?.zoningDescription || null,
+    schoolDistrict: apiData.property?.schoolDistrict || null,
+    waterService: apiData.property?.waterService || null,
+    sewerService: apiData.property?.sewerService || null,
+    fireDistrict: apiData.property?.fireDistrict || null,
+
+    // public records links (Phase 3)
+    courtIndexUrl: apiData.property?.countyNotices?.[0]?.courtIndexUrl || null,
+    rodSearchUrl: apiData.property?.countyNotices?.[0]?.rodSearchUrl || null,
+    taxPortalUrl: apiData.property?.countyNotices?.[0]?.taxPortalUrl || null,
+
+    // census ACS demographics (Phase 4)
+    censusTract: apiData.property?.censusTract || null,
+    medianHouseholdIncome: apiData.property?.medianHouseholdIncome || null,
+    medianHomeValue: apiData.property?.medianHomeValue || null,
+    vacancyRate: apiData.property?.vacancyRate || null,
+    ownerOccupiedRate: apiData.property?.ownerOccupiedRate || null,
+    medianGrossRent: apiData.property?.medianGrossRent || null,
+
     // foreclosure details (from county notices)
     caseNumber: apiData.property?.countyNotices?.[0]?.caseNumber || "N/A",
     filingDate: apiData.property?.countyNotices?.[0]?.createdAt
@@ -626,6 +647,103 @@ export default function OpportunityDetailPage() {
             </CardContent>
           </Card>
 
+          {/* 2b. Zoning & Services (Phase 2) */}
+          {(p.zoningCode || p.schoolDistrict || p.fireDistrict || p.waterService || p.sewerService) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Home className="h-5 w-5" />
+                  Zoning &amp; Services
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
+                  {p.zoningCode && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Zoning</p>
+                      <p className="text-sm font-semibold">{p.zoningCode}</p>
+                      {p.zoningDescription && <p className="text-xs text-muted-foreground">{p.zoningDescription}</p>}
+                    </div>
+                  )}
+                  {p.schoolDistrict && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">School District</p>
+                      <p className="text-sm">{p.schoolDistrict}</p>
+                    </div>
+                  )}
+                  {p.fireDistrict && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Fire District</p>
+                      <p className="text-sm">{p.fireDistrict}</p>
+                    </div>
+                  )}
+                  {p.waterService && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Water</p>
+                      <p className="text-sm">{p.waterService}</p>
+                    </div>
+                  )}
+                  {p.sewerService && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Sewer</p>
+                      <p className="text-sm">{p.sewerService}</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 2c. Neighborhood Demographics (Phase 4) */}
+          {p.censusTract && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Neighborhood Demographics
+                  <Badge variant="secondary" className="text-xs">Tract {p.censusTract}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-3">
+                  {p.medianHouseholdIncome && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Median Household Income</p>
+                      <p className="text-sm font-semibold">{fmt(p.medianHouseholdIncome)}</p>
+                    </div>
+                  )}
+                  {p.medianHomeValue && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Median Home Value</p>
+                      <p className="text-sm font-semibold">{fmt(p.medianHomeValue)}</p>
+                    </div>
+                  )}
+                  {p.medianGrossRent && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Median Gross Rent</p>
+                      <p className="text-sm">{fmt(p.medianGrossRent)}/mo</p>
+                    </div>
+                  )}
+                  {p.ownerOccupiedRate !== null && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Owner-Occupied Rate</p>
+                      <p className="text-sm">{Math.round(p.ownerOccupiedRate * 100)}%</p>
+                    </div>
+                  )}
+                  {p.vacancyRate !== null && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground">Vacancy Rate</p>
+                      <p className={`text-sm ${p.vacancyRate > 0.15 ? "text-red-600 font-semibold" : ""}`}>
+                        {Math.round(p.vacancyRate * 100)}%
+                        {p.vacancyRate > 0.15 && " (High)"}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* 3. Photos Section — Street View + Drive-By Uploads */}
           <Card>
             <CardHeader>
@@ -810,6 +928,39 @@ export default function OpportunityDetailPage() {
                   <p className="text-sm font-medium">{p.saleTime}</p>
                 </div>
               </div>
+
+              {/* Public Records Links */}
+              {(p.courtIndexUrl || p.rodSearchUrl || p.taxPortalUrl) && (
+                <div className="mt-4 pt-4 border-t">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">PUBLIC RECORDS</p>
+                  <div className="flex flex-wrap gap-2">
+                    {p.courtIndexUrl && (
+                      <a href={p.courtIndexUrl} target="_blank" rel="noopener noreferrer">
+                        <Button size="sm" variant="outline" className="text-xs">
+                          <FileText className="mr-1 h-3 w-3" />
+                          Court Index
+                        </Button>
+                      </a>
+                    )}
+                    {p.rodSearchUrl && (
+                      <a href={p.rodSearchUrl} target="_blank" rel="noopener noreferrer">
+                        <Button size="sm" variant="outline" className="text-xs">
+                          <FileText className="mr-1 h-3 w-3" />
+                          Register of Deeds
+                        </Button>
+                      </a>
+                    )}
+                    {p.taxPortalUrl && (
+                      <a href={p.taxPortalUrl} target="_blank" rel="noopener noreferrer">
+                        <Button size="sm" variant="outline" className="text-xs">
+                          <Tag className="mr-1 h-3 w-3" />
+                          Tax Portal
+                        </Button>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
