@@ -38,6 +38,7 @@ import {
   Brain,
   Loader2,
   RefreshCw,
+  Camera,
 } from "lucide-react";
 
 // ---------- helpers ----------
@@ -145,6 +146,7 @@ export default function OpportunityDetailPage() {
   const [compsLoading, setCompsLoading] = useState(false);
   const [compsError, setCompsError] = useState<string | null>(null);
   const [arvStats, setArvStats] = useState<any>(null);
+  const [driveByPhotos, setDriveByPhotos] = useState<Array<{url: string; label: string; date: string}>>([]);
 
   // Fetch opportunity data
   useEffect(() => {
@@ -573,23 +575,101 @@ export default function OpportunityDetailPage() {
             </CardContent>
           </Card>
 
-          {/* 3. Photos Section */}
+          {/* 3. Photos Section — Street View + Drive-By Uploads */}
           <Card>
             <CardHeader>
-              <CardTitle>Property Photos</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Property Photos</CardTitle>
+                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
+                  <Camera className="h-3.5 w-3.5" />
+                  Upload Drive-By Photos
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={async (e) => {
+                      const files = e.target.files;
+                      if (!files || !apiData?.propertyId) return;
+                      const newPhotos: Array<{url: string; label: string; date: string}> = [];
+                      for (const file of Array.from(files)) {
+                        const reader = new FileReader();
+                        const dataUrl = await new Promise<string>((resolve) => {
+                          reader.onload = () => resolve(reader.result as string);
+                          reader.readAsDataURL(file);
+                        });
+                        newPhotos.push({
+                          url: dataUrl,
+                          label: `Drive-By: ${file.name}`,
+                          date: new Date().toLocaleDateString(),
+                        });
+                      }
+                      setDriveByPhotos((prev) => [...prev, ...newPhotos]);
+                    }}
+                  />
+                </label>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <div
-                    key={i}
-                    className="flex h-36 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50"
-                  >
-                    <p className="text-xs text-muted-foreground text-center px-2">
-                      Property photos placeholder {i}
-                    </p>
+                {/* Street View — auto-loaded from Google */}
+                {p.lat && p.lng && (
+                  <div className="relative col-span-2 row-span-2 overflow-hidden rounded-lg border bg-gray-100">
+                    <img
+                      src={`https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${p.lat},${p.lng}&fov=90&heading=0&pitch=5&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ""}`}
+                      alt={`Street View of ${p.address}`}
+                      className="h-full w-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                        (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="flex h-full items-center justify-center p-4 text-center text-xs text-gray-400">Street View not available for this location</div>';
+                      }}
+                    />
+                    <div className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                      Google Street View
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional Street View angles */}
+                {p.lat && p.lng && [90, 180, 270].map((heading) => (
+                  <div key={heading} className="relative overflow-hidden rounded-lg border bg-gray-100">
+                    <img
+                      src={`https://maps.googleapis.com/maps/api/streetview?size=300x200&location=${p.lat},${p.lng}&fov=90&heading=${heading}&pitch=5&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ""}`}
+                      alt={`Street View ${heading}°`}
+                      className="h-36 w-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).parentElement!.style.display = "none";
+                      }}
+                    />
+                    <div className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+                      {heading}° view
+                    </div>
                   </div>
                 ))}
+
+                {/* Drive-By uploaded photos */}
+                {driveByPhotos.map((photo, idx) => (
+                  <div key={`driveby-${idx}`} className="relative overflow-hidden rounded-lg border border-blue-200 bg-blue-50">
+                    <img
+                      src={photo.url}
+                      alt={photo.label}
+                      className="h-36 w-full object-cover"
+                    />
+                    <div className="absolute bottom-1 left-1 rounded bg-blue-600/80 px-1.5 py-0.5 text-[10px] text-white">
+                      Drive-By · {photo.date}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Placeholder for adding more photos when none uploaded */}
+                {driveByPhotos.length === 0 && (
+                  <div className="flex h-36 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                    <div className="text-center text-muted-foreground px-2">
+                      <Camera className="mx-auto mb-1 h-5 w-5 opacity-40" />
+                      <p className="text-[10px]">Upload drive-by photos</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
