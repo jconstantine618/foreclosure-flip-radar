@@ -269,6 +269,7 @@ export class IngestionService {
             address: notice.address ?? existingNotice.address,
             plaintiff: notice.lenderName ?? existingNotice.plaintiff,
             defendant: notice.borrowerName ?? existingNotice.defendant,
+            lawFirm: notice.lawFirm ?? existingNotice.lawFirm,
             rawContent: notice.rawData
               ? JSON.stringify(notice.rawData)
               : existingNotice.rawContent,
@@ -299,6 +300,7 @@ export class IngestionService {
             address: notice.address ?? null,
             plaintiff: notice.lenderName ?? null,
             defendant: notice.borrowerName ?? null,
+            lawFirm: notice.lawFirm ?? null,
             rawContent: notice.rawData
               ? JSON.stringify(notice.rawData)
               : null,

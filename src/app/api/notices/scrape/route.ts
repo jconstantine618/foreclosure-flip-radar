@@ -49,6 +49,7 @@ function saleEntryToNotice(entry: MIESaleEntry): NormalizedNotice {
     address: entry.address || null,
     borrowerName: entry.defendant,
     lenderName: entry.plaintiff,
+    lawFirm: entry.lawFirm,
     auctionDate: entry.saleDate,
     documentUrl: entry.sourceUrl,
     rawData: {

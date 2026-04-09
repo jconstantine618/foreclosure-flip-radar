@@ -62,46 +62,24 @@ interface Notice {
   defendant: string;
   saleDate: string;
   matchedPropertyId: string | null;
+  opportunityId: string | null;
+  flipScore: number | null;
   sourceUrl: string;
   rawText: string;
   publishedDate: string;
 }
 
 // ---------- helper functions ----------
-function distressStageToNoticeType(
-  distressStage: string
+function dbNoticeTypeToDisplay(
+  noticeType: string
 ): NoticeType {
   const mapping: Record<string, NoticeType> = {
-    AUCTION: "MIE",
+    MASTER_IN_EQUITY: "MIE",
     LIS_PENDENS: "Lis Pendens",
-    TAX_LIEN: "Tax Sale",
-    PRE_FORECLOSURE: "Public Notice",
-    BANK_OWNED: "Public Notice",
-    REO: "Public Notice",
+    TAX_SALE: "Tax Sale",
+    UPSET_BID: "Upset Bid",
   };
-  return mapping[distressStage] || "Public Notice";
-}
-
-// ---------- API types ----------
-interface OpportunityProperty {
-  streetAddress: string | null;
-  city: string | null;
-  county: string | null;
-  state: string | null;
-  zipCode: string | null;
-  estimatedValue: number | null;
-  equityEstimate: number | null;
-}
-
-interface Opportunity {
-  id: string;
-  flipScore: number | null;
-  distressStage: string;
-  pipelineStage: string;
-  auctionDate: string | null;
-  createdAt: string;
-  propertyId: string | null;
-  property: OpportunityProperty;
+  return mapping[noticeType] || "Public Notice";
 }
 
 const NOTICE_TYPE_VARIANTS: Record<
@@ -131,43 +109,41 @@ export default function NoticesPage() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch opportunities and convert to notices
+  // Fetch real CountyNotice records from the dedicated endpoint
   useEffect(() => {
     async function fetchNotices() {
       try {
         setLoading(true);
-        const response = await fetch(
-          "/api/opportunities?limit=100&sort=auctionDate&order=asc"
-        );
-        if (!response.ok) throw new Error("Failed to fetch opportunities");
-        const data = await response.json();
-        const opportunities: Opportunity[] = data.data || data.opportunities || [];
+        const response = await fetch("/api/notices?limit=500");
+        if (!response.ok) throw new Error("Failed to fetch notices");
+        const json = await response.json();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const records: any[] = json.data || [];
 
-        // Map opportunities to notices
-        const mappedNotices: Notice[] = opportunities.map((opp) => {
-          const fullAddress =
-            opp.property?.streetAddress &&
-            opp.property?.city &&
-            opp.property?.state &&
-            opp.property?.zipCode
-              ? `${opp.property.streetAddress}, ${opp.property.city}, ${opp.property.state} ${opp.property.zipCode}`
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mappedNotices: Notice[] = records.map((rec: any) => {
+          const prop = rec.property;
+          const fullAddress = rec.address
+            ? rec.address
+            : prop?.streetAddress
+              ? `${prop.streetAddress}, ${prop.city || ""}, ${prop.state || "SC"} ${prop.zipCode || ""}`
               : null;
 
           return {
-            id: opp.id,
-            noticeType: distressStageToNoticeType(opp.distressStage),
-            county: opp.property?.county || "Unknown",
-            caseNumber: `FFR-${opp.id.slice(-8).toUpperCase()}`,
+            id: rec.id,
+            noticeType: dbNoticeTypeToDisplay(rec.noticeType),
+            county: rec.county || "Unknown",
+            caseNumber: rec.caseNumber || "N/A",
             address: fullAddress,
-            plaintiff: "Lender",
-            defendant: "Borrower",
-            saleDate: opp.auctionDate
-              ? opp.auctionDate.split("T")[0]
-              : opp.createdAt.split("T")[0],
-            matchedPropertyId: opp.propertyId,
-            sourceUrl: "#",
-            rawText: `Foreclosure notice for property at ${fullAddress || "Unknown address"}. Stage: ${opp.distressStage}. Flip score: ${opp.flipScore || "N/A"}.`,
-            publishedDate: opp.createdAt.split("T")[0],
+            plaintiff: rec.plaintiff || "N/A",
+            defendant: rec.defendant || "N/A",
+            saleDate: rec.saleDate || rec.createdAt?.split("T")[0] || "N/A",
+            matchedPropertyId: rec.matchedPropertyId,
+            opportunityId: rec.opportunityId,
+            flipScore: rec.flipScore,
+            sourceUrl: rec.sourceUrl || "#",
+            rawText: `Case ${rec.caseNumber || "N/A"} — ${rec.plaintiff || "Unknown"} v. ${rec.defendant || "Unknown"}. Sale date: ${rec.saleDate || "TBD"}.`,
+            publishedDate: rec.createdAt?.split("T")[0] || "",
           };
         });
 
@@ -196,7 +172,7 @@ export default function NoticesPage() {
       }
       return true;
     });
-  }, [county, noticeType, dateRange, matchedOnly]);
+  }, [notices, county, noticeType, dateRange, matchedOnly]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -237,6 +213,7 @@ export default function NoticesPage() {
                   <SelectItem value="ALL">All Counties</SelectItem>
                   <SelectItem value="Greenville">Greenville</SelectItem>
                   <SelectItem value="Horry">Horry</SelectItem>
+                  <SelectItem value="Georgetown">Georgetown</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -385,14 +362,19 @@ export default function NoticesPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {n.matchedPropertyId && (
+                    {n.opportunityId ? (
                       <Button variant="outline" size="sm" asChild>
-                        <a href={`/opportunities/${n.matchedPropertyId}`}>
+                        <a href={`/opportunities/${n.opportunityId}`}>
                           <Link2 className="mr-1 h-3 w-3" />
-                          View Matched Property
+                          View Opportunity{n.flipScore ? ` (Score: ${n.flipScore})` : ""}
                         </a>
                       </Button>
-                    )}
+                    ) : n.matchedPropertyId ? (
+                      <Button variant="outline" size="sm" disabled>
+                        <Link2 className="mr-1 h-3 w-3" />
+                        Matched (no opportunity)
+                      </Button>
+                    ) : null}
                     <Button variant="outline" size="sm" asChild>
                       <a
                         href={n.sourceUrl}

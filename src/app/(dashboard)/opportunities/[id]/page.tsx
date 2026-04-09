@@ -371,6 +371,7 @@ export default function OpportunityDetailPage() {
       : "N/A",
     plaintiff: apiData.property?.countyNotices?.[0]?.plaintiff || "N/A",
     defendant: apiData.property?.countyNotices?.[0]?.defendant || "N/A",
+    lawFirm: apiData.property?.countyNotices?.[0]?.lawFirm || "N/A",
     legalDescription: apiData.property?.countyNotices?.[0]?.legalDescription || "N/A",
     depositTerms: apiData.property?.countyNotices?.[0]?.depositTerms || "N/A",
     court: `${apiData.property?.county || ""} County Master in Equity`.trim() || "N/A",
@@ -906,6 +907,10 @@ export default function OpportunityDetailPage() {
                 <div>
                   <p className="text-xs font-medium text-muted-foreground">Defendant / Borrower</p>
                   <p className="text-sm">{p.defendant}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">Law Firm</p>
+                  <p className="text-sm">{p.lawFirm}</p>
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-xs font-medium text-muted-foreground">Legal Description</p>

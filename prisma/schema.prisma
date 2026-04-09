@@ -266,6 +266,7 @@ model CountyNotice {
   address          String?
   plaintiff        String?
   defendant        String?
+  lawFirm          String?
   legalDescription String?    @db.Text
   depositTerms     String?
   sourceUrl        String?

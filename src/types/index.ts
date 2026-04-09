@@ -161,6 +161,7 @@ export interface NormalizedNotice {
   // Parties
   borrowerName?: string | null;
   lenderName?: string | null;
+  lawFirm?: string | null;
   trusteeName?: string | null;
 
   // Amounts
