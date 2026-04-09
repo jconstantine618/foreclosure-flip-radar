@@ -121,7 +121,7 @@ export default function PipelinePage() {
         setLoading(true);
         setError(null);
         const response = await fetch(
-          "/api/opportunities?limit=200&sort=flipScore&order=desc"
+          "/api/opportunities?limit=100&sort=flipScore&order=desc"
         );
         if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
         const data = await response.json();
