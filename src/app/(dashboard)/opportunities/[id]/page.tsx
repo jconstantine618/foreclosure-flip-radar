@@ -314,8 +314,8 @@ export default function OpportunityDetailPage() {
     yearBuilt: apiData.property?.yearBuilt || "N/A",
     lotSize: "N/A",
     parcelNumber: "N/A",
-    lat: null,
-    lng: null,
+    lat: apiData.property?.latitude || null,
+    lng: apiData.property?.longitude || null,
     score: apiData.flipScore || 0,
     stage: apiData.distressStage || "OTHER",
     pipeline: apiData.pipelineStage || "NEW",
@@ -518,13 +518,58 @@ export default function OpportunityDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
-                <div className="text-center text-muted-foreground">
-                  <MapPin className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                  <p className="text-sm font-medium">Map - Google Maps integration placeholder</p>
-                  <p className="text-xs">{p.lat}, {p.lng}</p>
+              {p.lat && p.lng ? (
+                <div className="relative h-64 w-full overflow-hidden rounded-lg border">
+                  {process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ? (
+                    <iframe
+                      title="Property Location"
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY}&q=${encodeURIComponent(p.address + ", " + p.city + ", " + p.state + " " + p.zip)}&center=${p.lat},${p.lng}&zoom=16&maptype=satellite`}
+                    />
+                  ) : (
+                    <iframe
+                      title="Property Location"
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(p.lng) - 0.005},${Number(p.lat) - 0.003},${Number(p.lng) + 0.005},${Number(p.lat) + 0.003}&layer=mapnik&marker=${p.lat},${p.lng}`}
+                    />
+                  )}
+                  <div className="absolute bottom-2 right-2">
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded bg-white/90 px-2 py-1 text-xs font-medium text-gray-700 shadow hover:bg-white"
+                    >
+                      <MapPin className="h-3 w-3" />
+                      Open in Google Maps
+                    </a>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex h-64 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50">
+                  <div className="text-center text-muted-foreground">
+                    <MapPin className="mx-auto mb-2 h-8 w-8 opacity-40" />
+                    <p className="text-sm font-medium">No coordinates available</p>
+                    <p className="text-xs">
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.address + ", " + p.city + ", " + p.state + " " + p.zip)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        Search on Google Maps →
+                      </a>
+                    </p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
