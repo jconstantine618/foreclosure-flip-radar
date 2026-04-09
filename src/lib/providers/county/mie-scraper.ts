@@ -54,9 +54,12 @@ export async function getGreenvilleSaleDates(): Promise<string[]> {
     // that already went to auction
     const now = new Date();
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-    return dates
-      .filter((d) => new Date(d) >= sixtyDaysAgo)
-      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const filtered = dates.filter((d) => new Date(d) >= sixtyDaysAgo);
+    // Sort: future dates first (ascending), then past dates (most recent first)
+    // This ensures we always prioritize upcoming auctions
+    const future = filtered.filter((d) => new Date(d) >= now).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+    const past = filtered.filter((d) => new Date(d) < now).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    return [...future, ...past];
   } catch {
     console.warn("[MIE-Greenville] Failed to fetch sale dates");
     return [];
@@ -579,7 +582,7 @@ export async function scrapeAllCounties(): Promise<ScrapeAllResult[]> {
   try {
     const dates = await getGreenvilleSaleDates();
     const allGreenville: MIESaleEntry[] = [];
-    for (const d of dates.slice(0, 3)) {
+    for (const d of dates.slice(0, 6)) {
       const entries = await scrapeGreenvilleSales(d);
       allGreenville.push(...entries);
     }
