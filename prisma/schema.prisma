@@ -153,6 +153,33 @@ model Property {
   taxDelinquent     Boolean      @default(false)
   taxAmount         Float?
   floodZone         Boolean      @default(false)
+  floodZoneCode     String?      // FEMA zone: "X", "AE", "A", "VE", etc.
+  floodZoneDesc     String?      // "Minimal Risk", "100-yr Floodplain", etc.
+  baseFloodElevation Float?      // BFE in feet (NAVD88)
+  specialFloodHazard Boolean     @default(false) // SFHA — requires flood insurance
+
+  // Zoning & Land Use
+  zoningCode        String?
+  zoningDescription String?
+  schoolDistrict    String?
+  waterService      String?
+  sewerService      String?
+  fireDistrict      String?
+
+  // Neighborhood (Census ACS)
+  censusTract          String?
+  medianHouseholdIncome Float?
+  medianHomeValue      Float?
+  vacancyRate          Float?
+  ownerOccupiedRate    Float?
+  medianGrossRent      Float?
+
+  // Enhanced Tax
+  taxDelinquentYears   Int?
+  totalTaxDue          Float?
+  lastAssessedValue    Float?
+  assessmentYear       Int?
+
   hoaAmount         Float?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
@@ -247,6 +274,12 @@ model CountyNotice {
   matchConfidence  Float?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
+
+  // Deep links to public records
+  courtIndexUrl    String?
+  rodSearchUrl     String?
+  taxPortalUrl     String?
+  judgmentAmount   Float?
 
   property Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
 
