@@ -327,6 +327,7 @@ export interface ExtendedFlipScoreInput {
 
   // Flood
   floodZone?: boolean | null;
+  floodZoneCode?: string | null; // "X", "AE", "A", "VE", etc.
 
   // Holding
   projectedMonths?: number | null;

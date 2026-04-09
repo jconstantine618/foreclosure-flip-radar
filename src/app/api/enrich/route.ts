@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { lookupParcelByCoords } from "@/lib/providers/county/horry-arcgis";
 import { lookupGreenvilleParcel } from "@/lib/providers/county/greenville-arcgis";
 import { lookupGeorgetownParcel } from "@/lib/providers/county/georgetown-arcgis";
+import { lookupFloodZone } from "@/lib/providers/fema/nfhl";
 import { FlipScoringEngine } from "@/lib/scoring";
 
 export const maxDuration = 300;
@@ -26,12 +27,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const targetCounty: string | undefined = body.county;
 
-    // Find properties missing valuations
+    const enrichFlood = body.flood === true; // Pass { flood: true } to enrich flood data for all props
+
+    // Find properties missing valuations OR missing flood data
     const where: Record<string, unknown> = {
-      estimatedValue: null,
       latitude: { not: null },
       longitude: { not: null },
     };
+    if (enrichFlood) {
+      // For flood enrichment: get all properties missing flood zone code
+      where.floodZoneCode = null;
+    } else {
+      // Default: get properties missing valuations
+      where.estimatedValue = null;
+    }
     if (targetCounty) {
       where.county = { equals: targetCounty, mode: "insensitive" };
     }
@@ -102,6 +111,24 @@ export async function POST(request: NextRequest) {
             if (data.saleDate) updateData.lastSaleDate = data.saleDate;
             if (data.totalLandArea) updateData.lotSizeSqft = Math.round(data.totalLandArea * 43560);
           }
+        }
+
+        // ── FEMA Flood Zone Lookup ──
+        // Always attempt if we have coords and no flood zone code yet
+        try {
+          const floodData = await lookupFloodZone(prop.latitude!, prop.longitude!);
+          if (floodData) {
+            updateData.floodZoneCode = floodData.floodZoneCode;
+            updateData.floodZoneDesc = floodData.floodZoneDesc;
+            updateData.specialFloodHazard = floodData.specialFloodHazard;
+            updateData.floodZone = floodData.specialFloodHazard; // keep legacy boolean in sync
+            if (floodData.baseFloodElevation) {
+              updateData.baseFloodElevation = floodData.baseFloodElevation;
+            }
+            console.log(`[Enrich] 🌊 ${prop.streetAddress} — Zone ${floodData.floodZoneCode} (${floodData.specialFloodHazard ? "SFHA" : "non-SFHA"})`);
+          }
+        } catch (floodErr) {
+          console.warn(`[Enrich] 🌊 FEMA lookup failed for ${prop.streetAddress}:`, floodErr instanceof Error ? floodErr.message : floodErr);
         }
 
         if (Object.keys(updateData).length > 0) {
@@ -180,6 +207,7 @@ async function recalcScore(
     hoaMonthlyAmount: dbProp.hoaAmount ?? null,
     isCondo: dbProp.propertyType === "CONDO",
     floodZone: dbProp.floodZone ?? null,
+    floodZoneCode: (dbProp as any).floodZoneCode ?? null,
     projectedMonths: null,
   });
 

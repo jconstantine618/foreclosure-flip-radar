@@ -294,9 +294,26 @@ export class FlipScoringEngine {
   }
 
   /**
-   * 12. Flood zone risk: properties in a flood zone receive a penalty.
+   * 12. Flood zone risk: granular scoring based on FEMA zone code.
+   * VE/V (coastal high-velocity) = most severe penalty.
+   * AE/A/AO/AH (100-yr floodplain) = significant penalty.
+   * X with SFHA subtype or "D" = moderate penalty.
+   * X (minimal risk) = no penalty.
    */
   private scoreFloodZoneRisk(input: ExtendedFlipScoreInput): number {
+    const code = (input.floodZoneCode || "").toUpperCase().trim();
+
+    // If we have a zone code, use granular scoring
+    if (code) {
+      if (code.startsWith("V")) return 10;  // Coastal flood — severe
+      if (code === "AE" || code === "A99") return 25; // 100-yr w/ BFE
+      if (code.startsWith("A")) return 20;  // 100-yr floodplain
+      if (code === "D") return 60;           // Undetermined
+      if (code === "X") return 100;          // Minimal risk
+      return 50; // Unknown code — moderate caution
+    }
+
+    // Fallback to boolean if no zone code available
     return input.floodZone === true ? 20 : 100;
   }
 

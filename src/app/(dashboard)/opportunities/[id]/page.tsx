@@ -337,19 +337,27 @@ export default function OpportunityDetailPage() {
     projectedNetMargin: Math.round(((apiData.estimatedARV || 0) - (apiData.maxAllowableOffer || 0) - (apiData.estimatedRehabCost || 0)) * 0.67),
     projectedDaysToFlip: 90,
 
-    // foreclosure details
-    caseNumber: "N/A",
-    filingDate: "N/A",
-    plaintiff: "N/A",
-    defendant: "N/A",
-    legalDescription: "N/A",
-    depositTerms: "N/A",
-    court: "N/A",
+    // flood zone data
+    floodZoneCode: apiData.property?.floodZoneCode || null,
+    floodZoneDesc: apiData.property?.floodZoneDesc || null,
+    baseFloodElevation: apiData.property?.baseFloodElevation || null,
+    specialFloodHazard: apiData.property?.specialFloodHazard || false,
+
+    // foreclosure details (from county notices)
+    caseNumber: apiData.property?.countyNotices?.[0]?.caseNumber || "N/A",
+    filingDate: apiData.property?.countyNotices?.[0]?.createdAt
+      ? new Date(apiData.property.countyNotices[0].createdAt).toISOString().split('T')[0]
+      : "N/A",
+    plaintiff: apiData.property?.countyNotices?.[0]?.plaintiff || "N/A",
+    defendant: apiData.property?.countyNotices?.[0]?.defendant || "N/A",
+    legalDescription: apiData.property?.countyNotices?.[0]?.legalDescription || "N/A",
+    depositTerms: apiData.property?.countyNotices?.[0]?.depositTerms || "N/A",
+    court: `${apiData.property?.county || ""} County Master in Equity`.trim() || "N/A",
     saleDate: apiData.auctionDate ? new Date(apiData.auctionDate).toISOString().split('T')[0] : "N/A",
-    saleTime: "N/A",
+    saleTime: apiData.property?.countyNotices?.[0]?.saleTime || "11:00 AM",
 
     // owner
-    ownerName: "N/A",
+    ownerName: apiData.property?.ownerName || apiData.property?.countyNotices?.[0]?.defendant || "N/A",
     occupancyStatus: apiData.property?.ownerOccupied ? "Owner-Occupied" : "Non-Owner-Occupied",
     absenteeOwner: apiData.property?.absenteeOwner || false,
 
@@ -570,6 +578,49 @@ export default function OpportunityDetailPage() {
                       </a>
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* Flood Zone Banner */}
+              {p.floodZoneCode && (
+                <div className={`mt-3 rounded-lg border p-3 ${
+                  p.specialFloodHazard
+                    ? "border-red-300 bg-red-50"
+                    : p.floodZoneCode === "X"
+                    ? "border-green-200 bg-green-50"
+                    : "border-amber-200 bg-amber-50"
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-bold ${
+                        p.specialFloodHazard
+                          ? "bg-red-600 text-white"
+                          : p.floodZoneCode === "X"
+                          ? "bg-green-600 text-white"
+                          : "bg-amber-500 text-white"
+                      }`}>
+                        Zone {p.floodZoneCode}
+                      </span>
+                      <span className={`text-sm font-medium ${
+                        p.specialFloodHazard ? "text-red-800" : p.floodZoneCode === "X" ? "text-green-800" : "text-amber-800"
+                      }`}>
+                        {p.floodZoneDesc}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs">
+                      {p.baseFloodElevation && (
+                        <span className="text-muted-foreground">BFE: {p.baseFloodElevation} ft</span>
+                      )}
+                      {p.specialFloodHazard && (
+                        <span className="font-semibold text-red-700">Flood Insurance Required</span>
+                      )}
+                    </div>
+                  </div>
+                  {p.specialFloodHazard && (
+                    <p className="mt-1.5 text-xs text-red-700">
+                      This property is in a Special Flood Hazard Area (SFHA). Federally-backed mortgages require flood insurance, typically $2,000-5,000/yr. Factor into holding costs and buyer qualification.
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>
