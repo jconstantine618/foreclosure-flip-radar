@@ -12,6 +12,7 @@ import {
   lookupParcelByCoords,
   queryParcelsInArea,
 } from "../county/horry-arcgis";
+import { lookupGreenvilleParcel } from "../county/greenville-arcgis";
 
 // ---------------------------------------------------------------------------
 // BatchDataPropertyProvider
@@ -104,13 +105,15 @@ export class BatchDataPropertyProvider implements PropertyProvider {
     city: string;
     state: string;
     zip: string;
+    county?: string;
     take?: number;
     distanceMiles?: number;
   }): Promise<{ comps: ComparableSale[]; totalFound: number }> {
     const response = await this.client.getComps(params);
+    const subjectCounty = (params.county ?? "").toLowerCase();
 
     console.log(
-      `[Comps] BatchData returned ${response.results.properties.length} nearby properties (total: ${response.results.total})`,
+      `[Comps] BatchData returned ${response.results.properties.length} nearby properties (total: ${response.results.total}), county hint: ${subjectCounty || "none"}`,
     );
 
     // Enrich each property with county data using lat/lon from BatchData
@@ -120,6 +123,7 @@ export class BatchDataPropertyProvider implements PropertyProvider {
         const lat = r.address?.latitude;
         const lon = r.address?.longitude;
         const address = r.address?.street ?? r.address?.line1 ?? "";
+        const compCounty = (r.address?.county ?? subjectCounty).toLowerCase();
 
         // Try BatchData fields first (higher-tier plans include this data)
         let salePrice =
@@ -137,6 +141,16 @@ export class BatchDataPropertyProvider implements PropertyProvider {
           r.building?.squareFeet ??
           r.property?.sqft ??
           null;
+        let bedrooms =
+          r.building?.bedroomCount ??
+          r.building?.bedrooms ??
+          r.property?.bedrooms ??
+          null;
+        let bathrooms =
+          r.building?.bathroomCount ??
+          r.building?.bathrooms ??
+          r.property?.bathrooms ??
+          null;
 
         // Fallback 1: Use BatchData assessed/estimated values if no sale price
         if (salePrice === 0) {
@@ -151,15 +165,52 @@ export class BatchDataPropertyProvider implements PropertyProvider {
             0;
         }
 
-        // Fallback 2: Enrich from county records (Horry County ArcGIS)
-        let countyData = null;
-        if (salePrice === 0 && lat && lon) {
-          countyData = await lookupParcelByCoords(lat, lon);
-          if (countyData?.marketProp && countyData.marketProp > 0) {
-            salePrice = countyData.marketProp;
-            saleDate = countyData.saleDate
-              ? countyData.saleDate.toISOString()
-              : saleDate;
+        // Fallback 2: Enrich from county records using the appropriate county GIS
+        let countyData: any = null;
+        if (lat && lon) {
+          if (compCounty.includes("greenville")) {
+            // Greenville County ArcGIS — has sale price, sqft, beds, baths, tax market value
+            const gvl = await lookupGreenvilleParcel(lat, lon);
+            if (gvl) {
+              countyData = gvl;
+              // Use county sale price if BatchData didn't have one
+              if (salePrice === 0 && gvl.salePrice && gvl.salePrice > 0) {
+                salePrice = gvl.salePrice;
+              }
+              // Fall further back to tax market value
+              if (salePrice === 0 && gvl.taxMarketValue && gvl.taxMarketValue > 0) {
+                salePrice = gvl.taxMarketValue;
+              }
+              if (gvl.saleDate) {
+                saleDate = saleDate ?? gvl.saleDate.toISOString();
+              }
+              // Backfill property details from county if BatchData is missing them
+              if (!sqft && gvl.sqft) sqft = gvl.sqft;
+              if (!bedrooms && gvl.bedrooms) bedrooms = gvl.bedrooms;
+              if (!bathrooms && gvl.bathrooms) bathrooms = gvl.bathrooms;
+            }
+          } else if (compCounty.includes("horry")) {
+            // Horry County ArcGIS
+            const horry = await lookupParcelByCoords(lat, lon);
+            if (horry) {
+              countyData = horry;
+              if (salePrice === 0 && horry.marketProp && horry.marketProp > 0) {
+                salePrice = horry.marketProp;
+              }
+              if (horry.saleDate) {
+                saleDate = saleDate ?? horry.saleDate.toISOString();
+              }
+            }
+          } else if (salePrice === 0) {
+            // Unknown county — try Horry as general fallback (won't match but won't crash)
+            const fallback = await lookupParcelByCoords(lat, lon);
+            if (fallback?.marketProp && fallback.marketProp > 0) {
+              countyData = fallback;
+              salePrice = fallback.marketProp;
+              saleDate = fallback.saleDate
+                ? fallback.saleDate.toISOString()
+                : saleDate;
+            }
           }
         }
 
@@ -171,16 +222,8 @@ export class BatchDataPropertyProvider implements PropertyProvider {
           salePrice,
           saleDate,
           sqft,
-          bedrooms:
-            r.building?.bedroomCount ??
-            r.building?.bedrooms ??
-            r.property?.bedrooms ??
-            null,
-          bathrooms:
-            r.building?.bathroomCount ??
-            r.building?.bathrooms ??
-            r.property?.bathrooms ??
-            null,
+          bedrooms,
+          bathrooms,
           yearBuilt: r.building?.yearBuilt ?? null,
           lotSizeSqft: r.lot?.lotSizeSquareFeet ?? r.lot?.lotSize ?? null,
           distanceMiles: r.distance?.miles ?? r.distance ?? null,
