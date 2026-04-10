@@ -15,6 +15,27 @@ import {
 import { lookupGreenvilleParcel } from "../county/greenville-arcgis";
 
 // ---------------------------------------------------------------------------
+// Haversine distance (miles) between two lat/lon points
+// ---------------------------------------------------------------------------
+
+function haversineDistanceMiles(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const R = 3958.8; // Earth's radius in miles
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ---------------------------------------------------------------------------
 // BatchDataPropertyProvider
 // ---------------------------------------------------------------------------
 
@@ -106,11 +127,15 @@ export class BatchDataPropertyProvider implements PropertyProvider {
     state: string;
     zip: string;
     county?: string;
+    subjectLat?: number;
+    subjectLon?: number;
     take?: number;
     distanceMiles?: number;
   }): Promise<{ comps: ComparableSale[]; totalFound: number }> {
     const response = await this.client.getComps(params);
     const subjectCounty = (params.county ?? "").toLowerCase();
+    const subjectLat = params.subjectLat;
+    const subjectLon = params.subjectLon;
 
     console.log(
       `[Comps] BatchData returned ${response.results.properties.length} nearby properties (total: ${response.results.total}), county hint: ${subjectCounty || "none"}`,
@@ -226,7 +251,12 @@ export class BatchDataPropertyProvider implements PropertyProvider {
           bathrooms,
           yearBuilt: r.building?.yearBuilt ?? null,
           lotSizeSqft: r.lot?.lotSizeSquareFeet ?? r.lot?.lotSize ?? null,
-          distanceMiles: r.distance?.miles ?? r.distance ?? null,
+          distanceMiles:
+            r.distance?.miles ??
+            r.distance ??
+            (subjectLat && subjectLon && lat && lon
+              ? Math.round(haversineDistanceMiles(subjectLat, subjectLon, lat, lon) * 100) / 100
+              : null),
           pricePerSqft:
             salePrice && sqft ? Math.round(salePrice / sqft) : null,
           externalId: r._id ?? r.id ?? null,

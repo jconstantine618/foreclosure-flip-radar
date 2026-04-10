@@ -67,6 +67,8 @@ export async function GET(
       state: property.state,
       zip: property.zipCode,
       county: property.county ?? undefined,
+      subjectLat: property.latitude ?? undefined,
+      subjectLon: property.longitude ?? undefined,
       take: 15,
       distanceMiles: 1,
     });
