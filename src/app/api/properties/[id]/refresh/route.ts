@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { providerRegistry, initializeProviders } from '@/lib/providers';
 import { FlipScoringEngine, loadWeightsFromDb } from '@/lib/scoring';
+import { lookupGreenvilleParcel } from '@/lib/providers/county/greenville-arcgis';
+import { lookupParcelByCoords } from '@/lib/providers/county/horry-arcgis';
 import type { ExtendedFlipScoreInput } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,69 @@ export async function POST(
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`BatchData: ${msg}`);
         logger.warn({ propertyId: id, err: msg }, 'BatchData refresh failed');
+      }
+    }
+
+    // County GIS enrichment — backfill beds/baths/sqft/value from county records
+    if (property.latitude && property.longitude) {
+      const county = (property.county ?? '').toLowerCase();
+      try {
+        if (county.includes('greenville')) {
+          const gvl = await lookupGreenvilleParcel(property.latitude, property.longitude);
+          if (gvl) {
+            if (updates.bedrooms == null && gvl.bedrooms) updates.bedrooms = gvl.bedrooms;
+            if (updates.bathrooms == null && gvl.bathrooms) updates.bathrooms = gvl.bathrooms;
+            if (updates.sqft == null && gvl.sqft) updates.sqft = gvl.sqft;
+            if (updates.assessedValue == null && gvl.taxMarketValue) updates.assessedValue = gvl.taxMarketValue;
+            if (updates.lastSalePrice == null && gvl.salePrice && gvl.salePrice > 0) updates.lastSalePrice = gvl.salePrice;
+            if (updates.lastSaleDate == null && gvl.saleDate) updates.lastSaleDate = gvl.saleDate;
+            if (!property.parcelNumber && gvl.pin) updates.parcelNumber = gvl.pin;
+            logger.info({ propertyId: id, county: 'Greenville' }, 'County GIS enrichment applied');
+          }
+        } else if (county.includes('horry')) {
+          const horry = await lookupParcelByCoords(property.latitude, property.longitude);
+          if (horry) {
+            if (updates.assessedValue == null && horry.marketProp) updates.assessedValue = horry.marketProp;
+            if (updates.lastSaleDate == null && horry.saleDate) updates.lastSaleDate = horry.saleDate;
+            if (!property.parcelNumber && horry.tms) updates.parcelNumber = horry.tms;
+            if (updates.ownerName == null && horry.ownerName) updates.ownerName = horry.ownerName;
+            logger.info({ propertyId: id, county: 'Horry' }, 'County GIS enrichment applied');
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`County GIS: ${msg}`);
+        logger.warn({ propertyId: id, err: msg }, 'County GIS enrichment failed');
+      }
+    }
+
+    // BatchData address lookup — fills building details the distress search missed
+    if (batchDataProvider && (updates.bedrooms == null || updates.sqft == null)) {
+      try {
+        const batchProv = batchDataProvider as any;
+        if (batchProv.getClient) {
+          const client = batchProv.getClient();
+          const addr = `${property.streetAddress}, ${property.city}, ${property.state} ${property.zipCode}`;
+          const found = await client.getPropertyByAddress(addr);
+          if (found) {
+            const r = found as Record<string, any>;
+            const bd = r.building?.bedroomCount ?? r.building?.bedrooms ?? null;
+            const ba = r.building?.bathroomCount ?? r.building?.bathrooms ?? null;
+            const sf = r.building?.livingAreaSquareFeet ?? r.building?.squareFeet ?? null;
+            const yb = r.building?.yearBuilt ?? null;
+            const ls = r.lot?.lotSizeSquareFeet ?? null;
+            if (updates.bedrooms == null && bd != null) updates.bedrooms = bd;
+            if (updates.bathrooms == null && ba != null) updates.bathrooms = ba;
+            if (updates.sqft == null && sf != null) updates.sqft = sf;
+            if (updates.yearBuilt == null && yb != null) updates.yearBuilt = yb;
+            if (updates.lotSizeSqft == null && ls != null) updates.lotSizeSqft = ls;
+            logger.info({ propertyId: id }, 'BatchData address lookup enrichment applied');
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`BatchData address lookup: ${msg}`);
+        logger.warn({ propertyId: id, err: msg }, 'BatchData address lookup failed');
       }
     }
 
