@@ -64,7 +64,7 @@ const STAGE_CONFIG: Record<
   DISPOSITION: { label: "Disposition", color: "text-teal-700", bgColor: "bg-teal-50", borderColor: "border-teal-200", dropBg: "bg-teal-100" },
 };
 
-const STAGES: PipelineStage[] = ["NEW", "REVIEWING", "DRIVE_BY", "UNDERWRITING", "BID_READY", "PASSED", "WON", "DISPOSITION"];
+const STAGES: PipelineStage[] = ["NEW", "PASSED", "REVIEWING", "DRIVE_BY", "UNDERWRITING", "BID_READY", "WON", "DISPOSITION"];
 
 // ---------- helpers ----------
 function fmt(n: number) { return "$" + n.toLocaleString("en-US"); }
