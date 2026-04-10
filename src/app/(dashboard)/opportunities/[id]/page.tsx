@@ -1130,7 +1130,7 @@ export default function OpportunityDetailPage() {
                     <div>
                       <p className="text-xs text-green-600">Range</p>
                       <p className="text-sm font-medium text-green-800">
-                        ${arvStats.low?.toLocaleString() || "?"} â ${arvStats.high?.toLocaleString() || "?"}
+                        ${arvStats.low?.toLocaleString() || "?"} – ${arvStats.high?.toLocaleString() || "?"}
                       </p>
                     </div>
                     <div>
@@ -1166,7 +1166,7 @@ export default function OpportunityDetailPage() {
                           <td className="py-2 pr-3 font-medium">${c.salePrice?.toLocaleString()}</td>
                           <td className="py-2 pr-3 whitespace-nowrap">{c.saleDate ? new Date(c.saleDate).toLocaleDateString() : "N/A"}</td>
                           <td className="py-2 pr-3">{c.sqft?.toLocaleString() || "N/A"}</td>
-                          <td className="py-2 pr-3">{c.bedrooms || "?"}/{c.bathrooms || "?"}</td>
+                          <td className="py-2 pr-3">{c.bedrooms ?? "–"}/{c.bathrooms ?? "–"}</td>
                           <td className="py-2 pr-3">${c.pricePerSqft?.toLocaleString() || "N/A"}</td>
                           <td className="py-2">{c.distanceMiles?.toFixed(1) || "?"} mi</td>
                         </tr>
