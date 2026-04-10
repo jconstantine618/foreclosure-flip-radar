@@ -65,6 +65,49 @@ function daysUntil(dateStr: string) {
   return diff;
 }
 
+// ---------- county-specific auction defaults ----------
+const COUNTY_AUCTION_DEFAULTS: Record<string, {
+  location: string;
+  depositRequired: string;
+  biddingInstructions: string;
+  depositTerms: string;
+  complianceDeadline: string;
+  upsetBidInfo: string;
+  deedWarning: string;
+  contactInfo: string;
+}> = {
+  Greenville: {
+    location: "Courtroom 5, 3rd Floor, Greenville County Courthouse (Judicial Wing), 305 E. North St, Greenville, SC 29601",
+    depositRequired: "5% of bid in cash or certified check — due immediately when bid is accepted. You cannot leave and return with funds.",
+    biddingInstructions: "Sales held 1st Monday of each month at 11:00 AM (Tuesday if Monday is a holiday). No pre-registration required. Successful bidder must stay to register after sale. Bring 5% of your max bid in cash or certified check.",
+    depositTerms: "5% cash or certified check at time of sale. Balance due within 20 days plus interim interest at rate stated in Notice of Sale, plus $25 deed preparation fee.",
+    complianceDeadline: "20 days from sale date. Balance + interim interest + $25 deed fee. Contact Jennifer Boehmke at 864-467-8663 for total amount due.",
+    upsetBidInfo: "If lender reserves right to deficiency judgment, bidding remains open 30 days after sale for upset bids. Many lenders waive this — check the Foreclosure Order.",
+    deedWarning: "Not a general warranty deed. Title opinion from a licensed attorney recommended before bidding. Sold subject to past-due taxes, assessments, easements, and restrictions of record.",
+    contactInfo: "MIE Office: 864-467-8770 | Compliance: Jennifer Boehmke 864-467-8663",
+  },
+  Horry: {
+    location: "Horry County Master in Equity, Conway, SC",
+    depositRequired: "5% of bid in certified funds",
+    biddingInstructions: "Check horrycountysc.gov/departments/master-in-equity for current schedule and procedures.",
+    depositTerms: "5% certified funds at time of sale.",
+    complianceDeadline: "Per Foreclosure Order — typically 20-30 days.",
+    upsetBidInfo: "30-day upset bid period if lender reserves deficiency judgment.",
+    deedWarning: "Not a general warranty deed. Title opinion recommended before bidding.",
+    contactInfo: "Horry County MIE Office",
+  },
+  Georgetown: {
+    location: "Georgetown County Courthouse, Georgetown, SC",
+    depositRequired: "5% of bid in certified funds",
+    biddingInstructions: "Check Georgetown County MIE office for current schedule and procedures.",
+    depositTerms: "5% certified funds at time of sale.",
+    complianceDeadline: "Per Foreclosure Order — typically 20-30 days.",
+    upsetBidInfo: "30-day upset bid period if lender reserves deficiency judgment.",
+    deedWarning: "Not a general warranty deed. Title opinion recommended before bidding.",
+    contactInfo: "Georgetown County MIE Office",
+  },
+};
+
 // ---------- property type label map ----------
 const PROPERTY_TYPE_LABELS: Record<string, string> = {
   SINGLE_FAMILY: "Single Family",
@@ -364,7 +407,7 @@ export default function OpportunityDetailPage() {
     ownerOccupiedRate: apiData.property?.ownerOccupiedRate || null,
     medianGrossRent: apiData.property?.medianGrossRent || null,
 
-    // foreclosure details (from county notices)
+    // foreclosure details (from county notices + county defaults)
     caseNumber: apiData.property?.countyNotices?.[0]?.caseNumber || "N/A",
     filingDate: apiData.property?.countyNotices?.[0]?.createdAt
       ? new Date(apiData.property.countyNotices[0].createdAt).toISOString().split('T')[0]
@@ -373,21 +416,27 @@ export default function OpportunityDetailPage() {
     defendant: apiData.property?.countyNotices?.[0]?.defendant || "N/A",
     lawFirm: apiData.property?.countyNotices?.[0]?.lawFirm || "N/A",
     legalDescription: apiData.property?.countyNotices?.[0]?.legalDescription || "N/A",
-    depositTerms: apiData.property?.countyNotices?.[0]?.depositTerms || "N/A",
+    depositTerms: apiData.property?.countyNotices?.[0]?.depositTerms
+      || COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.depositTerms
+      || "N/A",
     court: `${apiData.property?.county || ""} County Master in Equity`.trim() || "N/A",
     saleDate: apiData.auctionDate ? new Date(apiData.auctionDate).toISOString().split('T')[0] : "N/A",
     saleTime: apiData.property?.countyNotices?.[0]?.saleTime || "11:00 AM",
+    complianceDeadline: COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.complianceDeadline || "N/A",
+    upsetBidInfo: COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.upsetBidInfo || "N/A",
+    deedWarning: COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.deedWarning || null,
+    contactInfo: COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.contactInfo || null,
 
     // owner
     ownerName: apiData.property?.ownerName || apiData.property?.countyNotices?.[0]?.defendant || "N/A",
     occupancyStatus: apiData.property?.ownerOccupied ? "Owner-Occupied" : "Non-Owner-Occupied",
     absenteeOwner: apiData.property?.absenteeOwner || false,
 
-    // auction
+    // auction (use county defaults)
     auctionDate: apiData.auctionDate ? new Date(apiData.auctionDate).toISOString().split('T')[0] : "N/A",
-    auctionLocation: "N/A",
-    depositRequired: "N/A",
-    biddingInstructions: "N/A",
+    auctionLocation: COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.location || "N/A",
+    depositRequired: COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.depositRequired || "N/A",
+    biddingInstructions: COUNTY_AUCTION_DEFAULTS[apiData.property?.county || ""]?.biddingInstructions || "N/A",
 
     // score breakdown
     scoreFactors: [
@@ -932,7 +981,35 @@ export default function OpportunityDetailPage() {
                   <p className="text-xs font-medium text-muted-foreground">Sale Time</p>
                   <p className="text-sm font-medium">{p.saleTime}</p>
                 </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">Compliance Deadline</p>
+                  <p className="text-sm">{p.complianceDeadline}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-xs font-medium text-muted-foreground">Upset Bid Period</p>
+                  <p className="text-sm">{p.upsetBidInfo}</p>
+                </div>
               </div>
+
+              {/* Deed Warning */}
+              {p.deedWarning && (
+                <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold text-amber-800">Deed & Title Warning</p>
+                      <p className="text-xs text-amber-700 mt-0.5">{p.deedWarning}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Contact Info */}
+              {p.contactInfo && (
+                <div className="mt-3 text-xs text-muted-foreground">
+                  {p.contactInfo}
+                </div>
+              )}
 
               {/* Public Records Links */}
               {(p.courtIndexUrl || p.rodSearchUrl || p.taxPortalUrl) && (
