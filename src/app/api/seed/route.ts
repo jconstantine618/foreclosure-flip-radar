@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-// One-time seed endpoint â run once to populate the database, then remove
+// One-time seed endpoint — run once to populate the database, then remove
 export async function POST(request: Request) {
   const authHeader = request.headers.get("x-seed-key");
   if (authHeader !== process.env.SEED_SECRET && authHeader !== "forecloser-seed-2026") {

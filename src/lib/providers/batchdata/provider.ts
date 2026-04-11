@@ -296,7 +296,7 @@ export class BatchDataPropertyProvider implements PropertyProvider {
     // foreclosure.* for distress info, ids.apn for parcel number, etc.
     const r = raw as Record<string, any>;
 
-    // Resolve mailing address â may be an object or a string
+    // Resolve mailing address – may be an object or a string
     let ownerMailingAddr: string | null = null;
     if (r.owner?.mailingAddress) {
       if (typeof r.owner.mailingAddress === "string") {

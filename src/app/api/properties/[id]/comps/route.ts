@@ -137,7 +137,7 @@ export async function GET(
         };
         logger.info(
           { propertyId, fallbackValue },
-          "No comps found â using property valuation as ARV fallback",
+          "No comps found — using property valuation as ARV fallback",
         );
       }
     }
