@@ -209,7 +209,10 @@ export default function OpportunityDetailPage() {
         const json = await res.json();
         setApiData(json.data);
         setPipeline(json.data.pipelineStage || "NEW");
-        setRehabEstimate(json.data.estimatedRehabCost || 0);
+        if (json.data.estimatedRehabCost) {
+          setRehabEstimate(json.data.estimatedRehabCost);
+          setRehabPreset(""); // clear preset since DB value won't match a preset
+        }
 
         // Load persisted notes + AI analysis from opportunity.notes JSON field
         let persistedNotes: any[] = [];
@@ -221,7 +224,7 @@ export default function OpportunityDetailPage() {
             persistedAnalysis = stored.aiAnalysis || null;
           }
         } catch {
-          // notes field isn't JSON â ignore
+          // notes field isn't JSON — ignore
         }
         // Merge property.notes (from DB Note model) with persisted user notes
         const dbNotes = (json.data.property?.notes || []).map((n: any) => ({
