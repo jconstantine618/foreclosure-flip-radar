@@ -161,7 +161,14 @@ export default function OpportunityDetailPage() {
 
   // UI state
   const [pipeline, setPipeline] = useState<string>("");
-  const [rehabEstimate, setRehabEstimate] = useState(0);
+  const [rehabEstimate, setRehabEstimate] = useState(35000);
+  const [rehabPreset, setRehabPreset] = useState<string>("medium");
+  const [arvSource, setArvSource] = useState<"median" | "mean" | "conservative" | "custom">("median");
+  const [customArv, setCustomArv] = useState<number>(0);
+  const [rulePercent, setRulePercent] = useState(70);
+  const [holdingMonths, setHoldingMonths] = useState(6);
+  const [monthlyHoldingCost, setMonthlyHoldingCost] = useState(1500);
+  const [closingCostPercent, setClosingCostPercent] = useState(8);
   const [newNote, setNewNote] = useState("");
   const [notes, setNotes] = useState<any[]>([]);
   const [tags, setTags] = useState<string[]>([]);
@@ -451,10 +458,25 @@ export default function OpportunityDetailPage() {
     hasCountyNotice: true,
   };
 
-  // Derived financials based on rehab slider
-  const maxAllowableOffer = Math.round(p.estimatedARV * 0.7 - rehabEstimate);
-  const projectedGrossMargin = p.estimatedARV - p.targetPurchasePrice - rehabEstimate;
-  const projectedNetMargin = Math.round(projectedGrossMargin * 0.67);
+  // --- Deal Analyzer: derived financials ---
+  const liveArv =
+    arvSource === "custom" ? customArv
+    : arvSource === "mean" ? (arvStats?.mean || p.estimatedARV)
+    : arvSource === "conservative" ? (arvStats?.low || Math.round((arvStats?.median || p.estimatedARV) * 0.9))
+    : (arvStats?.median || p.estimatedARV); // default: median
+
+  const maxAllowableOffer = Math.round(liveArv * (rulePercent / 100) - rehabEstimate);
+  const holdingCosts = holdingMonths * monthlyHoldingCost;
+  const closingCosts = Math.round(liveArv * (closingCostPercent / 100));
+  const totalCostBasis = maxAllowableOffer + rehabEstimate + holdingCosts + closingCosts;
+  const projectedGrossProfit = liveArv - totalCostBasis;
+  const roi = totalCostBasis > 0 ? Math.round((projectedGrossProfit / totalCostBasis) * 100) : 0;
+  const cashNeeded = maxAllowableOffer + rehabEstimate + holdingCosts;
+  const dealVerdict = projectedGrossProfit >= 30000 ? "GO" : projectedGrossProfit >= 15000 ? "MAYBE" : "NO-GO";
+
+  // Legacy aliases for anything else referencing these
+  const projectedGrossMargin = projectedGrossProfit;
+  const projectedNetMargin = Math.round(projectedGrossProfit * 0.67);
 
   async function addNote() {
     if (!newNote.trim()) return;
@@ -1422,67 +1444,228 @@ export default function OpportunityDetailPage() {
             </CardContent>
           </Card>
 
-          {/* 2. Financial Summary */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Financial Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Estimated Value</span>
-                <span className="text-sm font-medium">{fmt(p.estimatedValue)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Mortgage Balance</span>
-                <span className="text-sm font-medium">{fmt(p.mortgageBalance)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Estimated Equity</span>
-                <span className="text-sm font-medium text-green-600">
-                  {fmt(p.estimatedEquity)} ({p.equityPercent}%)
+          {/* 2. Deal Analyzer (MAO Calculator) */}
+          <Card className="border-2 border-slate-300">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Deal Analyzer
                 </span>
-              </div>
-              <Separator />
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Estimated ARV</span>
-                <span className="text-sm font-medium">{fmt(p.estimatedARV)}</span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Estimated Rehab</span>
-                  <span className="text-sm font-medium">{fmt(rehabEstimate)}</span>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                  dealVerdict === "GO" ? "bg-green-100 text-green-700 border border-green-300" :
+                  dealVerdict === "MAYBE" ? "bg-amber-100 text-amber-700 border border-amber-300" :
+                  "bg-red-100 text-red-700 border border-red-300"
+                }`}>
+                  {dealVerdict === "GO" ? "GO" : dealVerdict === "MAYBE" ? "MAYBE" : "NO-GO"}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* --- ARV Source --- */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">After Repair Value (ARV)</label>
+                <div className="grid grid-cols-4 gap-1 mt-1.5">
+                  {(["median", "mean", "conservative", "custom"] as const).map((src) => (
+                    <button
+                      key={src}
+                      onClick={() => setArvSource(src)}
+                      className={`text-[11px] py-1 px-1 rounded border transition-colors ${
+                        arvSource === src
+                          ? "bg-slate-900 text-white border-slate-900"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                      }`}
+                    >
+                      {src === "median" ? "Median" : src === "mean" ? "Mean" : src === "conservative" ? "Low" : "Custom"}
+                    </button>
+                  ))}
                 </div>
-                <Slider
-                  value={[rehabEstimate]}
-                  onValueChange={(v) => setRehabEstimate(v[0])}
-                  min={10000}
-                  max={100000}
-                  step={1000}
-                  className="mt-1"
-                />
-                <p className="text-[10px] text-muted-foreground">Adjust rehab estimate to recalculate</p>
+                {arvSource === "custom" ? (
+                  <div className="mt-2">
+                    <Input
+                      type="number"
+                      value={customArv || ""}
+                      onChange={(e) => setCustomArv(Number(e.target.value))}
+                      placeholder="Enter custom ARV"
+                      className="text-sm h-8"
+                    />
+                  </div>
+                ) : (
+                  <p className="text-lg font-bold mt-1">{fmt(liveArv)}</p>
+                )}
+                {!arvStats?.median && liveArv > 0 && (
+                  <p className="text-[10px] text-amber-600 mt-0.5">Using database estimate — fetch comps for better accuracy</p>
+                )}
               </div>
+
               <Separator />
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Max Allowable Offer</span>
-                <span className="text-sm font-bold">{fmt(maxAllowableOffer)}</span>
+
+              {/* --- Rehab Estimate with Presets --- */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Rehab Estimate</label>
+                <div className="grid grid-cols-4 gap-1 mt-1.5">
+                  {[
+                    { key: "light", label: "Light", val: 15000 },
+                    { key: "medium", label: "Medium", val: 35000 },
+                    { key: "heavy", label: "Heavy", val: 60000 },
+                    { key: "gut", label: "Gut Job", val: 100000 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.key}
+                      onClick={() => { setRehabPreset(preset.key); setRehabEstimate(preset.val); }}
+                      className={`text-[11px] py-1 px-1 rounded border transition-colors ${
+                        rehabPreset === preset.key
+                          ? "bg-slate-900 text-white border-slate-900"
+                          : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <Slider
+                    value={[rehabEstimate]}
+                    onValueChange={(v) => { setRehabEstimate(v[0]); setRehabPreset(""); }}
+                    min={5000}
+                    max={150000}
+                    step={1000}
+                    className="flex-1"
+                  />
+                  <span className="text-sm font-bold w-20 text-right">{fmt(rehabEstimate)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Target Purchase Price</span>
-                <span className="text-sm font-medium">{fmt(p.targetPurchasePrice)}</span>
+
+              <Separator />
+
+              {/* --- Rule % and MAO --- */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Max Allowable Offer</label>
+                  <div className="flex items-center gap-1">
+                    {[65, 70, 75].map((pct) => (
+                      <button
+                        key={pct}
+                        onClick={() => setRulePercent(pct)}
+                        className={`text-[10px] py-0.5 px-2 rounded border transition-colors ${
+                          rulePercent === pct
+                            ? "bg-slate-900 text-white border-slate-900"
+                            : "bg-white text-slate-500 border-slate-200 hover:border-slate-400"
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {fmt(liveArv)} × {rulePercent}% − {fmt(rehabEstimate)} rehab
+                </p>
+                <p className={`text-2xl font-bold mt-1 ${maxAllowableOffer > 0 ? "text-slate-900" : "text-red-600"}`}>
+                  {fmt(Math.max(0, maxAllowableOffer))}
+                </p>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Projected Gross Margin</span>
-                <span className="text-sm font-medium text-green-600">{fmt(projectedGrossMargin)}</span>
+
+              <Separator />
+
+              {/* --- Cost Breakdown --- */}
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Cost Breakdown</label>
+                <div className="mt-2 space-y-1.5">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Purchase (MAO)</span>
+                    <span>{fmt(Math.max(0, maxAllowableOffer))}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Rehab</span>
+                    <span>{fmt(rehabEstimate)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      Holding
+                      <span className="text-[10px] text-slate-400">({holdingMonths}mo × {fmt(monthlyHoldingCost)})</span>
+                    </span>
+                    <span>{fmt(holdingCosts)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      Closing
+                      <span className="text-[10px] text-slate-400">({closingCostPercent}%)</span>
+                    </span>
+                    <span>{fmt(closingCosts)}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span>Total Cost Basis</span>
+                    <span>{fmt(totalCostBasis)}</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Projected Net Margin</span>
-                <span className="text-sm font-bold text-green-600">{fmt(projectedNetMargin)}</span>
+
+              <Separator />
+
+              {/* --- Projected Profit & Verdict --- */}
+              <div className={`rounded-lg p-3 ${
+                dealVerdict === "GO" ? "bg-green-50 border border-green-200" :
+                dealVerdict === "MAYBE" ? "bg-amber-50 border border-amber-200" :
+                "bg-red-50 border border-red-200"
+              }`}>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold">Projected Profit</span>
+                  <span className={`text-xl font-bold ${
+                    projectedGrossProfit >= 30000 ? "text-green-700" :
+                    projectedGrossProfit >= 15000 ? "text-amber-700" :
+                    "text-red-700"
+                  }`}>
+                    {fmt(projectedGrossProfit)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <span className="text-xs text-muted-foreground">ROI</span>
+                  <span className={`text-sm font-semibold ${roi >= 20 ? "text-green-600" : roi >= 10 ? "text-amber-600" : "text-red-600"}`}>
+                    {roi}%
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <span className="text-xs text-muted-foreground">Cash Needed (excl. closing)</span>
+                  <span className="text-sm font-medium">{fmt(cashNeeded)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Projected Days to Flip</span>
-                <span className="text-sm font-medium">{p.projectedDaysToFlip} days</span>
-              </div>
+
+              {/* --- Fine-Tune Accordion --- */}
+              <details className="group">
+                <summary className="text-xs text-muted-foreground cursor-pointer hover:text-slate-600">
+                  Fine-tune holding &amp; closing costs
+                </summary>
+                <div className="mt-2 space-y-3 pl-1">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground w-28">Holding months</label>
+                    <Slider value={[holdingMonths]} onValueChange={(v) => setHoldingMonths(v[0])} min={1} max={18} step={1} className="flex-1" />
+                    <span className="text-xs font-medium w-8 text-right">{holdingMonths}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground w-28">Monthly cost</label>
+                    <Slider value={[monthlyHoldingCost]} onValueChange={(v) => setMonthlyHoldingCost(v[0])} min={500} max={5000} step={100} className="flex-1" />
+                    <span className="text-xs font-medium w-16 text-right">{fmt(monthlyHoldingCost)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-muted-foreground w-28">Closing costs %</label>
+                    <Slider value={[closingCostPercent]} onValueChange={(v) => setClosingCostPercent(v[0])} min={3} max={12} step={0.5} className="flex-1" />
+                    <span className="text-xs font-medium w-8 text-right">{closingCostPercent}%</span>
+                  </div>
+                </div>
+              </details>
+
+              {/* --- Legacy equity info --- */}
+              {p.estimatedEquity > 0 && (
+                <>
+                  <Separator />
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Est. Equity</span>
+                    <span className="text-green-600 font-medium">{fmt(p.estimatedEquity)} ({p.equityPercent}%)</span>
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
